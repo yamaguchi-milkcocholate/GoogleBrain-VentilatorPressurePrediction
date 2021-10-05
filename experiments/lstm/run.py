@@ -3,6 +3,7 @@ import numpy as np
 import pandas as pd
 import json
 import os
+import sys
 import gc
 import shutil
 from pathlib import Path
@@ -66,7 +67,7 @@ def build_model(config: Config, n_features) -> keras.models.Sequential:
     model.add(keras.layers.Dense(50, activation="selu"))
     model.add(keras.layers.Dense(1))
 
-    model.compile(optimizer=keras.optimizers.Adam(lr=config.lr), loss="mae")
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss="mae")
     return model
 
 
@@ -183,7 +184,8 @@ def main(config: Dict[str, Any]):
 
 
 if __name__ == "__main__":
-    cfg_file_path = Path(__file__).resolve().parent / "config.json"
+    cnf_file = sys.argv[1]
+    cfg_file_path = Path(__file__).resolve().parent / cnf_file
     with open(cfg_file_path, "rb") as f:
         config = json.load(f)
 
