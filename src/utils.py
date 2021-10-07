@@ -7,7 +7,7 @@ import json
 from matplotlib import pyplot as plt
 from pathlib import Path
 from typing import *
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 
 
 @dataclass
@@ -20,7 +20,7 @@ class Config:
 
     def to_json(self, filepath: str):
         with open(filepath, "w") as f:
-            json.dump(asdict(self), f)
+            json.dump(vars(self), f)
 
 
 def seed_every_thing(seed: int = 42):
