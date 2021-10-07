@@ -9,6 +9,9 @@ from pathlib import Path
 from typing import *
 from dataclasses import dataclass
 
+import torch
+from torch.utils.data import Dataset
+
 
 @dataclass
 class Config:
@@ -28,6 +31,11 @@ def seed_every_thing(seed: int = 42):
     os.environ["PYTHONHASHSEED"] = str(seed)
     np.random.seed(seed)
     tf.random.set_seed(seed)
+
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 
 def fetch_data(datadir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -49,3 +57,43 @@ def plot_metric(filepath, metric="loss") -> None:
         ax.plot(log[loss_nm], label=loss_nm)
     ax.legend()
     fig.savefig(Path(filepath).parent / "loss.png")
+
+
+class VentilatorDataset(Dataset):
+    def __init__(self, df: pd.DataFrame, features: List[str]) -> None:
+        if "pressure" not in df.columns:
+            df["pressure"] = 0
+        self.df = df
+        self.features = features
+
+        self.inputs = df[features].values.reshape(-1, 80, len(features))
+        self.targets = df[["pressure"]].values.reshape(-1, 80)
+        self.u_outs = df[["u_out"]].values.reshape(-1, 80)
+
+    def __len__(self) -> int:
+        return self.df.shape[0]
+
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        data = {
+            "input": torch.tensor(self.inputs[idx], dtype=torch.float),
+            "u_out": torch.tensor(self.u_outs[idx], dtype=torch.float),
+            "target": torch.tensor(self.targets[idx], dtype=torch.float),
+        }
+        return data
+
+
+def compute_metric(
+    y_trues: np.ndarray, y_preds: np.ndarray, u_outs: np.ndarray
+) -> np.ndarray:
+    if np.any([len(series.shape) == 1 for series in [y_trues, y_preds, u_outs]]):
+        # reshape (#samples, #time-steps)
+        y_trues, y_preds, u_outs = (
+            y_trues.reshape(-1, 80),
+            y_preds.reshape(-1, 80),
+            u_outs.reshape(-1, 80),
+        )
+    mask = 1 - u_outs
+    mae = mask * np.abs(y_trues - y_preds)
+    mae = mae.sum(axis=1) / mask.sum(axis=1)
+
+    return mae
