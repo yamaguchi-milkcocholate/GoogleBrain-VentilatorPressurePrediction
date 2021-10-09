@@ -4,12 +4,14 @@ import numpy as np
 import random
 import pandas as pd
 import json
+import math
 from matplotlib import pyplot as plt
 from pathlib import Path
 from typing import *
 from dataclasses import dataclass
 
 import torch
+import torch.nn as nn
 from torch.utils.data import Dataset
 
 
@@ -60,18 +62,18 @@ def plot_metric(filepath, metric="loss") -> None:
 
 
 class VentilatorDataset(Dataset):
-    def __init__(self, df: pd.DataFrame, features: List[str]) -> None:
-        if "pressure" not in df.columns:
-            df["pressure"] = 0
-        self.df = df
-        self.features = features
+    def __init__(
+        self, X: np.ndarray, u_outs: np.ndarray, y: Optional[np.ndarray] = None
+    ) -> None:
+        if y is None:
+            y = np.zeros_like(u_outs)
 
-        self.inputs = df[features].values.reshape(-1, 80, len(features))
-        self.targets = df[["pressure"]].values.reshape(-1, 80)
-        self.u_outs = df[["u_out"]].values.reshape(-1, 80)
+        self.inputs = X
+        self.targets = y
+        self.u_outs = u_outs
 
     def __len__(self) -> int:
-        return self.df.shape[0]
+        return self.inputs.shape[0]
 
     def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
         data = {
@@ -80,6 +82,28 @@ class VentilatorDataset(Dataset):
             "target": torch.tensor(self.targets[idx], dtype=torch.float),
         }
         return data
+
+
+class PositionalEncoding(nn.Module):
+    """Positional Encoding for Transormer Model"""
+
+    def __init__(self, n_features: int, dropout: Optional[float] = 0.1, max_len=80):
+        super().__init__()
+        self.dropout = nn.Dropout(p=dropout)
+
+        pe = torch.zeros(max_len, n_features)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(
+            torch.arange(0, n_features, 2).float() * (-math.log(10000.0) / n_features)
+        )
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)[:, :(n_features // 2)]
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer("pe", pe)
+
+    def forward(self, x):
+        x = x + self.pe[:x.size(0), :]
+        return self.dropout(x)
 
 
 def compute_metric(

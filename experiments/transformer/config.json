@@ -1,0 +1,18 @@
+{
+    "dirname": "transformer-last",
+    "debug": false,
+    "seed": 42,
+    "n_splits": 5,
+    "device": "cuda:1",
+    "epochs": 300,
+    "batch_size": 512,
+    "lr": 1e-3,
+    "transformer": {
+        "n_head": 8,
+        "n_hidden": 400,
+        "n_layers": 4,
+        "dropout": 0.1,
+        "fc_layer_units": []
+    },
+    "num_workers": 8
+}
