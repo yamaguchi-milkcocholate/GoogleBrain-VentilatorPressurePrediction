@@ -219,7 +219,7 @@ def main(config: Dict[str, Any]):
     )
 
     for fold, (train_idx, test_idx) in enumerate(kf.split(train_data, targets)):
-        print("\t", "-" * 15, ">", f"Fold {fold+1}", "<", "-" * 15)
+        print("-" * 15, ">", f"Fold {fold+1}", "<", "-" * 15)
         savedir = logdir / f"fold{fold}"
         os.makedirs(savedir, exist_ok=True)
 
@@ -300,8 +300,7 @@ def main(config: Dict[str, Any]):
             elapsed_time = time.time() - start_time
             print(
                 f"Epoch {epoch + 1:03d}/{config.epochs:03d} t={elapsed_time:.0f}s "
-                f"loss={avg_loss:.3f} val loss={avg_val_loss:.3f} score={val_metric_score:.3f}",
-                end="\t",
+                f"loss={avg_loss:.3f} val_loss={avg_val_loss:.3f} score={val_metric_score:.3f}",
             )
 
             log["epoch"].append(epoch)

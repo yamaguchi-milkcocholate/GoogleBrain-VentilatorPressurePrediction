@@ -1,5 +1,5 @@
 {
-    "dirname": "transformer-last",
+    "dirname": "transformer-last2",
     "debug": false,
     "seed": 42,
     "n_splits": 5,
@@ -9,10 +9,10 @@
     "lr": 1e-3,
     "transformer": {
         "n_head": 8,
-        "n_hidden": 400,
-        "n_layers": 4,
-        "dropout": 0.1,
-        "fc_layer_units": []
+        "n_hidden": 1024,
+        "n_layers": 6,
+        "dropout": 0,
+        "fc_layer_units": [100, 50]
     },
     "num_workers": 8
 }
