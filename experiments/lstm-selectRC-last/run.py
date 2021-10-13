@@ -231,7 +231,7 @@ def main(config: Dict[str, Any]):
                 keras.backend.clear_session()
                 gc.collect()
 
-        pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv")
+        pd.DataFrame(valid_preds).to_csv(RCdir / "valid_preds.csv")
 
         if not config.debug:
             submission_df.loc[submission_df.RC == RC_type, "pressure"] = np.median(
