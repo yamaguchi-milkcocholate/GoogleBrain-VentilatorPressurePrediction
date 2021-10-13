@@ -28,6 +28,20 @@ class Config:
             json.dump(vars(self), f)
 
 
+def reduce_tf_gpu_memory(gpu_id: int):
+    physical_devices = tf.config.list_physical_devices("GPU")
+    if len(physical_devices) > 0:
+        for device in physical_devices:
+            tf.config.experimental.set_memory_growth(device, True)
+            print(
+                "{} memory growth: {}".format(
+                    device, tf.config.experimental.get_memory_growth(device)
+                )
+            )
+    else:
+        print("Not enough GPU hardware devices available")
+
+
 def seed_every_thing(seed: int = 42):
     random.seed(seed)
     os.environ["PYTHONHASHSEED"] = str(seed)
@@ -44,6 +58,17 @@ def fetch_data(datadir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
     print("fetching data ...")
     train = pd.read_csv(datadir / "train.csv")
     test = pd.read_csv(datadir / "test.csv")
+    submission = pd.read_csv(datadir / "sample_submission.csv")
+    print("done.")
+
+    return train, test, submission
+
+
+def fetch_custom_data(datadir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    print("fetching data ...")
+    train = pd.read_csv(datadir / "train_RC_kfold5_seed42.csv", index_col=0)
+    test = pd.read_csv(datadir / "test.csv")
+    test["RC"] = test["R"].astype(str) + "_" + test["C"].astype(str)
     submission = pd.read_csv(datadir / "sample_submission.csv")
     print("done.")
 
@@ -97,12 +122,12 @@ class PositionalEncoding(nn.Module):
             torch.arange(0, n_features, 2).float() * (-math.log(10000.0) / n_features)
         )
         pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)[:, :(n_features // 2)]
+        pe[:, 1::2] = torch.cos(position * div_term)[:, : (n_features // 2)]
         pe = pe.unsqueeze(0).transpose(0, 1)
         self.register_buffer("pe", pe)
 
     def forward(self, x):
-        x = x + self.pe[:x.size(0), :]
+        x = x + self.pe[: x.size(0), :]
         return self.dropout(x)
 
 
