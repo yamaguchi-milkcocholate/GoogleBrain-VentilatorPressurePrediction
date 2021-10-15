@@ -7,6 +7,9 @@
     "epochs": 300,
     "batch_size": 512,
     "n_units": [256, 128, 64, 32],
+    "lstm_dropout": 0,
+    "n_dense_units": [50],
+    "dense_dropout": 0,
     "lr": 1e-3,
     "es_patience": 10,
     "schedular": {

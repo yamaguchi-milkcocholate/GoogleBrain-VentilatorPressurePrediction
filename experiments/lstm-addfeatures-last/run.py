@@ -194,10 +194,12 @@ def build_model(config: Config, n_features) -> keras.models.Sequential:
     for n_unit in config.n_units:
         model.add(
             keras.layers.Bidirectional(
-                keras.layers.LSTM(n_unit, return_sequences=True, dropout=0)
+                keras.layers.LSTM(n_unit, return_sequences=True, dropout=config.lstm_dropout)
             )
         )
-    model.add(keras.layers.Dense(50, activation="selu"))
+    for n_unit in config.n_dense_units:
+        model.add(keras.layers.Dense(n_unit, activation="selu"))
+        model.add(keras.layers.Dropout(config.dense_dropout))
     model.add(keras.layers.Dense(1))
 
     model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss="mae")
