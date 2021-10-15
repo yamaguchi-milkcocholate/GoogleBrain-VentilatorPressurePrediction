@@ -1,0 +1,22 @@
+{
+    "dirname": "lstm-addfeatures-last-2-overfit",
+    "debug": false,
+    "seed": 42,
+    "n_splits": 5,
+    "gpu_id": 2,
+    "epochs": 300,
+    "batch_size": 512,
+    "n_units": [500, 400, 300, 200, 100],
+    "lstm_dropout": 0.1,
+    "n_dense_units": [50],
+    "dense_dropout": 0.1,
+    "lr": 1e-3,
+    "es_patience": 10,
+    "schedular": {
+        "factor": 0.9,
+        "patience": 10,
+        "min_lr": 1e-4,
+        "min_delta": 0,
+        "verbose": 1
+    }
+}
