@@ -29,6 +29,7 @@ from src.utils import (
     Config,
     plot_metric,
     reduce_tf_gpu_memory,
+    reduce_mem_usage,
 )
 
 
@@ -38,21 +39,40 @@ def _add_features(df_):
     df["C"] = df["C"].astype(str)
     df["RC"] = df["R"] + "_" + df["C"]
 
-    df["u_in_insp"] = df["u_in"] * (1 - df["u_out"])
-    df["u_in_zero"] = (df["u_in"] == 0).astype(int)
     grp_by = df.groupby("breath_id")
     df["time_delta"] = grp_by["time_step"].diff(1).fillna(0.0)
-    df["u_in_lag1"] = grp_by["u_in"].shift(1).fillna(0.0)
-    df["u_in_lag2"] = grp_by["u_in"].shift(2).fillna(0.0)
-    df["spike"] = df["u_in_lag1"] - (0.5 * df["u_in"] + 0.5 * df["u_in_lag2"])
-    df["spike_size"] = df["spike"] ** 2
+
+    # lag
+    for n_lag in range(1, 6):
+        df[f"u_in_lag_b{n_lag}"] = grp_by["u_in"].shift(n_lag).fillna(method="bfill")
+    for n_lag in range(1, 6):
+        df[f"u_in_lag_f{n_lag}"] = grp_by["u_in"].shift(-n_lag).fillna(method="ffill")
+
+    # window
+    cols_list = (
+        ["u_in"] + [f"u_in_lag_b{n_lag}" for n_lag in range(1, 6)],  # back
+        list(reversed([f"u_in_lag_f{n_lag}" for n_lag in range(1, 6)]))
+        + ["u_in"],  # front
+        list(reversed([f"u_in_lag_f{n_lag}" for n_lag in range(1, 3)]))
+        + ["u_in"]
+        + [f"u_in_lag_b{n_lag}" for n_lag in range(1, 6)],  # center
+    )
+    for cols, prefix in zip(cols_list, ("b", "f", "c")):
+        for lam in ["mean", "max", "min", "std"]:
+            df[f"u_in_{prefix}window_{lam}"] = getattr(np, lam)(df[cols].values, axis=1)
+
+    # window x u_in
+    for prefix in ("b", "f", "c"):
+        for lam in ["mean", "max", "min"]:
+            df[f"u_in_{prefix}window_{lam}_diff"] = (
+                df["u_in"] - df[f"u_in_{prefix}window_{lam}"]
+            )
+
     df["u_in_diff"] = grp_by["u_in"].diff(1).fillna(0.0)
     df["u_in_diff_sign"] = np.sign(df["u_in_diff"])
-    df["u_in_zero_diff"] = grp_by["u_in_zero"].diff(1).fillna(0.0)
-    df["u_in_zero_start"] = (df["u_in_zero_diff"] == 1).astype(int)
 
     df["tmp1"] = df["time_delta"] * df["u_in"]
-    df["tmp2"] = df["time_delta"] * df["u_in_insp"]
+    df["tmp2"] = df["time_delta"] * ((1 - df["u_out"]) * df["u_in"])
 
     grp_by = df.groupby("breath_id")
     df["u_in_norm_diff"] = df["u_in_diff"] / (
@@ -61,7 +81,6 @@ def _add_features(df_):
     df["u_in_diff_change"] = (
         np.sign(grp_by["u_in_diff_sign"].diff(1).fillna(0)) != 0
     ).astype(int)
-    df["u_in_insp_diff_change"] = df["u_in_diff_change"] * (1 - df["u_out"])
     df["area"] = grp_by["tmp1"].cumsum()
     df["area_insp"] = grp_by["tmp2"].cumsum()
 
@@ -70,18 +89,14 @@ def _add_features(df_):
     df.loc[79::80, "last"] = 1
 
     df["tmp3"] = df["u_out"].diff(1).fillna(0)
-    df["u_out_change"] = (df["tmp3"] == 1).astype(int)
 
-    df.drop(
-        ["u_in_zero_diff", "u_in_zero", "tmp1", "tmp2", "tmp3"], axis=1, inplace=True
-    )
+    df.drop(["tmp1", "tmp2", "tmp3"], axis=1, inplace=True)
     return df
 
 
 def calc_stats(df_):
     first_df = df_.loc[0::80]
     last_df = df_.loc[79::80]
-    u_out_change_df = df_[df_.u_out_change == 1]
 
     df = pd.DataFrame(
         {"breath_id": first_df["breath_id"].values, "RC": first_df["RC"].values}
@@ -91,49 +106,22 @@ def calc_stats(df_):
     df["area_last"] = last_df["area"].values
     df["area_insp_last"] = last_df["area_insp"].values
     df["total_time"] = last_df["time_step"].values
-    df["u_in_at_u_out_change"] = u_out_change_df["u_in"].values
-
-    df["p_first"] = first_df["pressure"].values
-    df["p_last"] = last_df["pressure"].values
-    df["p_at_u_out_change"] = u_out_change_df["pressure"].values
 
     grp_by = df_.groupby("breath_id")
-    for lam in ["max", "min", "mean", "std"]:
+    for lam in ["max", "mean", "std"]:
         df[f"u_in_{lam}"] = df["breath_id"].map(
             getattr(grp_by["u_in"], lam)().to_dict()
         )
-        df[f"u_in_insp_{lam}"] = df["breath_id"].map(
-            getattr(grp_by["u_in_insp"], lam)().to_dict()
-        )
-        df[f"spike_size_{lam}"] = df["breath_id"].map(
-            getattr(grp_by["spike_size"], lam)().to_dict()
-        )
 
-    for lam in ["max", "min"]:
-        df[f"p_{lam}"] = df["breath_id"].map(
-            getattr(grp_by["pressure"], lam)().to_dict()
+    for lam in ["max", "mean"]:
+        df[f"area_{lam}"] = df["breath_id"].map(
+            getattr(grp_by["area"], lam)().to_dict()
+        )
+        df[f"area_insp_{lam}"] = df["breath_id"].map(
+            getattr(grp_by["area_insp"], lam)().to_dict()
         )
 
     df["vibs"] = df["breath_id"].map(grp_by["u_in_diff_change"].sum().to_dict())
-    df["vibs_insp"] = df["breath_id"].map(
-        grp_by["u_in_insp_diff_change"].sum().to_dict()
-    )
-
-    df["num_zero_start"] = df["breath_id"].map(
-        grp_by["u_in_zero_start"].sum().to_dict()
-    )
-    df["zero_start_time"] = last_df["time_step"].values
-    df["zero_start_time"] = df["breath_id"].map(
-        df_[df_["u_in_zero_start"] == 1]
-        .groupby("breath_id")["time_step"]
-        .first()
-        .to_dict()
-    )
-    df["zero_start_time"] = np.where(
-        df.zero_start_time.isnull(),
-        last_df["time_step"].values,
-        df["zero_start_time"].values,
-    )
 
     df["u_in_last_cluster"] = 0
     df.loc[(df.u_in_last > 4.965) & (df.u_in_last < 4.980), "u_in_last_cluster"] = 1
@@ -144,49 +132,33 @@ def calc_stats(df_):
     return df
 
 
-def add_features(df_: pd.DataFrame) -> pd.DataFrame:
+def add_features(df_):
     df = df_.copy()
-
     df = _add_features(df)
     df_stats = calc_stats(df)
     df_stats = df_stats.set_index("breath_id")
-    cols = df_stats.drop(
-        ["p_first", "p_last", "p_at_u_out_change", "p_max", "p_min"], axis=1
-    ).columns
+    cols = df_stats.columns
     for c in cols:
         df[c] = df.breath_id.map(df_stats[c].to_dict())
 
-    for lam in ["min", "max", "mean"]:
-        for c in ["u_in", "u_in_insp", "spike_size"]:
-            df[f"{c}_{lam}_diff"] = df[c] - df[f"{c}_{lam}"]
+    df["time_step"] = df["time_step"] / df["total_time"]
+    df.drop(["total_time"], axis=1, inplace=True)
 
-        df[f"u_in_cross_{lam}"] = df["u_in"] - df[f"u_in_insp_{lam}"]
-        df[f"u_in_insp_cross_{lam}"] = df["u_in_insp"] - df[f"u_in_{lam}"]
+    for lam in ["max", "mean"]:
+        df[f"u_in_{lam}_diff"] = df["u_in"] - df[f"u_in_{lam}"]
+        df[f"area_{lam}_diff"] = df["area"] - df[f"area_{lam}"]
+        df[f"area_insp_{lam}_diff"] = df["area_insp"] - df[f"area_insp_{lam}"]
 
-        df["u_in_first_diff"] = df["u_in"] - df["u_in_first"]
-        df["u_in_insp_first_diff"] = df["u_in_insp"] - df["u_in_first"]
-        df["u_in_last_diff"] = df["u_in"] - df["u_in_last"]
-        df["u_in_insp_last_diff"] = df["u_in_insp"] - df["u_in_last"]
-
-    df["time_to_zero_start"] = df["zero_start_time"] - df["time_step"]
+    df["u_in_first_diff"] = df["u_in"] - df["u_in_first"]
+    df["u_in_last_diff"] = df["u_in"] - df["u_in_last"]
 
     df.drop(
-        [
-            "id",
-            "breath_id",
-            "u_in_diff_sign",
-            "u_in_diff_change",
-            "u_in_insp_diff_change",
-            "first",
-            "last",
-            "u_out_change",
-            "u_in_zero_start",
-        ],
+        ["id", "breath_id", "u_in_diff_sign", "u_in_diff_change", "first", "last"],
         axis=1,
         inplace=True,
     )
 
-    return df
+    return reduce_mem_usage(df)
 
 
 def build_model(config: Config, n_features) -> keras.models.Sequential:
@@ -194,7 +166,14 @@ def build_model(config: Config, n_features) -> keras.models.Sequential:
     for n_unit in config.n_units:
         model.add(
             keras.layers.Bidirectional(
-                keras.layers.LSTM(n_unit, return_sequences=True, dropout=config.lstm_dropout)
+                keras.layers.LSTM(
+                    n_unit,
+                    return_sequences=True,
+                    dropout=config.lstm_dropout,
+                    bias_regularizer=keras.regularizers.l2(config.lstm_l2_reg),
+                    kernel_regularizer=keras.regularizers.l2(config.lstm_l2_reg),
+                    recurrent_regularizer=keras.regularizers.l2(config.lstm_l2_reg),
+                )
             )
         )
     for n_unit in config.n_dense_units:
