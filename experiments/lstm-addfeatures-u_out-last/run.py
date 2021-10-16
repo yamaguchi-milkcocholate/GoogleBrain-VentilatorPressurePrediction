@@ -30,7 +30,7 @@ from src.utils import (
     plot_metric,
     reduce_tf_gpu_memory,
     reduce_mem_usage,
-    fetch_custom_data
+    fetch_custom_data,
 )
 
 
@@ -154,11 +154,20 @@ def add_features(df_):
     df["u_in_last_diff"] = df["u_in"] - df["u_in_last"]
 
     df.drop(
-        ["id", "RC", "breath_id", "u_in_diff_sign", "u_in_diff_change", "first", "last"],
+        [
+            "id",
+            "RC",
+            "breath_id",
+            "u_in_diff_sign",
+            "u_in_diff_change",
+            "first",
+            "last",
+        ],
         axis=1,
         inplace=True,
     )
 
+    df["pressure"] = (1 - df["u_out"]) * df["pressure"]
     return reduce_mem_usage(df)
 
 
@@ -207,7 +216,7 @@ def main(config: Dict[str, Any]):
     train_df = add_features(train_df)
     test_df = add_features(test_df)
 
-    kfolds = train_df.iloc[0::80]['kfold'].values
+    kfolds = train_df.iloc[0::80]["kfold"].values
 
     features = list(train_df.drop(["kfold", "pressure"], axis=1).columns)
     pprint(features)

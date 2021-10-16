@@ -1,21 +1,23 @@
 {
-    "dirname": "lstm-addfeatures-last-2-overfit",
+    "dirname": "lstm-addfeatures-last-3-xxlarge",
     "debug": false,
     "seed": 42,
     "n_splits": 5,
-    "gpu_id": 2,
+    "gpu_id": 1,
     "epochs": 300,
     "batch_size": 512,
     "n_units": [
-        256,
-        128,
-        64,
-        32
+        900,
+        600,
+        450,
+        250,
+        100,
+        50
     ],
     "lstm_dropout": 0,
-    "lstm_l2_reg": 0.01,
+    "lstm_l2_reg": 0,
     "n_dense_units": [
-        50
+        100, 50
     ],
     "dense_dropout": 0,
     "lr": 1e-3,
