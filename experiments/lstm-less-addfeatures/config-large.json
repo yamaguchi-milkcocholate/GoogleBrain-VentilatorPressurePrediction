@@ -1,0 +1,28 @@
+{
+    "dirname": "lstm-less-addfeatures",
+    "debug": false,
+    "seed": 42,
+    "n_splits": 5,
+    "gpu_id": 0,
+    "epochs": 300,
+    "batch_size": 512,
+    "n_units": [
+        500,
+        400,
+        300,
+        200,
+        100
+    ],
+    "n_dense_units": [
+        50
+    ],
+    "lr": 1e-3,
+    "es_patience": 50,
+    "schedular": {
+        "factor": 0.75,
+        "patience": 10,
+        "min_lr": 1e-5,
+        "min_delta": 0,
+        "verbose": 1
+    }
+}
