@@ -14,6 +14,8 @@ import torch
 import torch.nn as nn
 from torch.utils.data import Dataset
 
+from tensorflow import keras
+
 
 @dataclass
 class Config:
@@ -191,3 +193,29 @@ def compute_metric(
     mae = mae.sum(axis=1) / mask.sum(axis=1)
 
     return mae
+
+
+class CustomL1Loss(keras.callbacks.Callback):
+    def __init__(self, X_valid, y_valid, u_outs, filepath) -> None:
+        super().__init__()
+        self.X_valid = X_valid
+        self.y_valid = y_valid
+        self.u_outs = u_outs
+        self.filepath = filepath
+
+    def on_train_begin(self, logs={}):
+        self.logs = []
+        self.best_score = np.inf
+
+    def on_epoch_end(self, epoch, logs={}):
+        y_preds = self.model(self.X_valid).numpy().squeeze()
+
+        mae = compute_metric(y_trues=self.y_valid, y_preds=y_preds, u_outs=self.u_outs)
+        mae = np.mean(mae)
+        logs['val_custom_loss'] = mae
+        self.logs.append(mae)
+        print(f"customL1: {mae:.5f}")
+
+        if self.best_score > mae:
+            self.best_score = mae
+            self.model.save_weights(self.filepath)
