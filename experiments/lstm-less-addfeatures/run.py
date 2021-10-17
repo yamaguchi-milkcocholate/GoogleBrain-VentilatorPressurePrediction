@@ -30,7 +30,8 @@ from src.utils import (
     plot_metric,
     reduce_tf_gpu_memory,
     reduce_mem_usage,
-    fetch_custom_data
+    fetch_custom_data,
+    CustomL1Loss
 )
 
 
@@ -214,7 +215,7 @@ def main(config: Dict[str, Any]):
     pprint(features)
     print(len(features))
 
-    cont_features = [f for f in features if ("RC_" not in f) and ("R_" not in f) and ("C_" not in f)]
+    cont_features = [f for f in features if ("RC_" not in f) and ("R_" not in f) and ("C_" not in f) and ("u_out" not in f)]
     pprint(cont_features)
 
     RS = RobustScaler()
@@ -241,12 +242,19 @@ def main(config: Dict[str, Any]):
 
             model = build_model(config=config, n_features=len(features))
 
-            es = EarlyStopping(
-                monitor="val_loss",
-                patience=config.es_patience,
-                verbose=1,
-                mode="min",
-                restore_best_weights=True,
+            # es = EarlyStopping(
+            #     monitor="val_loss",
+            #     patience=config.es_patience,
+            #     verbose=1,
+            #     mode="min",
+            #     restore_best_weights=True,
+            # )
+
+            customL1 = CustomL1Loss(
+                X_valid=X_valid,
+                y_valid=y_valid,
+                u_outs=X_valid[:, :, features.index("u_out")],
+                filepath=savedir / "weights_custom_best.h5"
             )
 
             check_point = ModelCheckpoint(
@@ -268,9 +276,11 @@ def main(config: Dict[str, Any]):
                 validation_data=(X_valid, y_valid),
                 epochs=config.epochs,
                 batch_size=config.batch_size,
-                callbacks=[es, check_point, schedular]
+                callbacks=[check_point, schedular, customL1]
             )
             model.save_weights(savedir / "weights_final.h5")
+
+            model.load_weights(savedir / "weights_custom_best.h5")
 
             pd.DataFrame(history.history).to_csv(savedir / "log.csv")
             plot_metric(filepath=savedir / "log.csv", metric="loss")
