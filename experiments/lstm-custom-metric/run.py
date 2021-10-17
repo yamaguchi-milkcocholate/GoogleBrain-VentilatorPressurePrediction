@@ -55,6 +55,8 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df["C"] = df["C"].astype(str)
     df["RC"] = df["R"] + df["C"]
     df = pd.get_dummies(df)
+
+    df.loc[df.u_out == 1, "pressure"] = -1
     return df
 
 
@@ -67,8 +69,14 @@ def build_model(config: Config, n_features) -> keras.models.Sequential:
     model.add(keras.layers.Dense(50, activation="selu"))
     model.add(keras.layers.Dense(1))
 
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss="mae")
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss=custom_loss)
     return model
+
+def custom_loss(y_true, y_pred):
+    mask = tf.cast(y_true != -1, tf.float32)
+    mae = mask * tf.math.abs(y_true - y_pred)
+    mae = tf.math.reduce_sum(mae) / tf.math.reduce_sum(mask)
+    return mae
 
 
 def main(config: Dict[str, Any]):

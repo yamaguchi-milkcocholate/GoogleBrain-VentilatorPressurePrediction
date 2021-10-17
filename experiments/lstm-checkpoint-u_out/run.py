@@ -11,7 +11,13 @@ from typing import *
 
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
+from tensorflow.keras.callbacks import (
+    EarlyStopping,
+    ReduceLROnPlateau,
+    ModelCheckpoint,
+    LearningRateScheduler,
+)
+from tensorflow.keras.optimizers.schedules import ExponentialDecay
 
 from sklearn.metrics import mean_absolute_error as mae
 from sklearn.preprocessing import RobustScaler
@@ -25,7 +31,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.utils import seed_every_thing, fetch_data, Config, plot_metric
 
 
-def add_features(df: pd.DataFrame) -> pd.DataFrame:
+def add_features(df: pd.DataFrame, is_train: bool = True) -> pd.DataFrame:
     df["area"] = df["time_step"] * df["u_in"]
     df["area"] = df.groupby("breath_id")["area"].cumsum()
     df["cross"] = df["u_in"] * df["u_out"]
@@ -55,6 +61,8 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df["C"] = df["C"].astype(str)
     df["RC"] = df["R"] + df["C"]
     df = pd.get_dummies(df)
+    if is_train:
+        df["pressure"] = (1 - df["u_out"]) * df["pressure"]
     return df
 
 
@@ -84,11 +92,11 @@ def main(config: Dict[str, Any]):
     train_df, test_df, submission_df = fetch_data(datadir=datadir)
 
     if config.debug:
-        train_df = train_df[:80 * 100]
-        test_df = test_df[:80 * 100]
+        train_df = train_df[: 80 * 100]
+        test_df = test_df[: 80 * 100]
 
     train_df = add_features(df=train_df)
-    test_df = add_features(df=test_df)
+    test_df = add_features(df=test_df, is_train=False)
 
     features = list(
         train_df.drop(
@@ -132,15 +140,24 @@ def main(config: Dict[str, Any]):
 
             model = build_model(config=config, n_features=len(features))
 
-            es = EarlyStopping(
-                monitor="val_loss",
-                patience=config.es_patience,
-                verbose=1,
-                mode="min",
-                restore_best_weights=True,
-            )
+            # es = EarlyStopping(
+            #     monitor="val_loss",
+            #     patience=config.es_patience,
+            #     verbose=1,
+            #     mode="min",
+            #     restore_best_weights=True,
+            # )
 
-            check_point = ModelCheckpoint(
+            check_point1 = ModelCheckpoint(
+                filepath=savedir / "weights_{epoch:03d}.h5",
+                monitor="val_loss",
+                verbose=1,
+                save_best_only=False,
+                mode="min",
+                save_weights_only=True,
+                period=50,
+            )
+            check_point2 = ModelCheckpoint(
                 filepath=savedir / "weights_best.h5",
                 monitor="val_loss",
                 verbose=1,
@@ -149,9 +166,17 @@ def main(config: Dict[str, Any]):
                 save_weights_only=True,
             )
 
-            schedular = ReduceLROnPlateau(
-                monitor="val_loss", mode="min", **config.schedular
+            # schedular = ReduceLROnPlateau(
+            #     monitor="val_loss", mode="min", **config.schedular
+            # )
+
+            scheduler = ExponentialDecay(
+                config.lr,
+                (config.epochs / config.total_power)
+                * (len(train_idx) / config.batch_size),
+                decay_rate=config.decay_rate,
             )
+            lr = LearningRateScheduler(scheduler, verbose=1)
 
             history = model.fit(
                 X_train,
@@ -159,11 +184,13 @@ def main(config: Dict[str, Any]):
                 validation_data=(X_valid, y_valid),
                 epochs=config.epochs,
                 batch_size=config.batch_size,
-                callbacks=[es, check_point, schedular]
+                callbacks=[check_point1, check_point2, lr]
+                # callbacks=[es, check_point, schedular]
             )
+            model.save_weights(savedir / "weights_final.h5")
 
-            pd.DataFrame(history.history).to_csv(savedir / 'log.csv')
-            plot_metric(filepath=savedir / 'log.csv', metric='loss')
+            pd.DataFrame(history.history).to_csv(savedir / "log.csv")
+            plot_metric(filepath=savedir / "log.csv", metric="loss")
 
             valid_preds[test_idx, :] = model.predict(X_valid).squeeze()
             test_preds.append(
@@ -180,7 +207,7 @@ def main(config: Dict[str, Any]):
         submission_df["pressure"] = sum(test_preds) / 5
         submission_df.to_csv(logdir / "submission.csv", index=False)
 
-    shutil.copyfile(Path(__file__), logdir / 'script.py')
+    shutil.copyfile(Path(__file__), logdir / "script.py")
 
 
 if __name__ == "__main__":

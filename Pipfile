@@ -13,6 +13,7 @@ kaggle = "*"
 black = "*"
 keras = "*"
 scikit-learn = "*"
+torch = "*"
 
 [dev-packages]
 

@@ -62,7 +62,7 @@ def build_model(config: Config, n_features) -> keras.models.Sequential:
     model = keras.models.Sequential([keras.layers.Input(shape=(80, n_features))])
     for n_unit in config.n_units:
         model.add(
-            keras.layers.Bidirectional(keras.layers.LSTM(n_unit, return_sequences=True))
+            keras.layers.Bidirectional(keras.layers.LSTM(n_unit, return_sequences=True, dropout=config.dropout))
         )
     model.add(keras.layers.Dense(50, activation="selu"))
     model.add(keras.layers.Dense(1))

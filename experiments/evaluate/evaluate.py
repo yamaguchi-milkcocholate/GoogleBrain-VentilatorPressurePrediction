@@ -84,8 +84,8 @@ def main(config: Dict[str, Any]):
     train_df, test_df, submission_df = fetch_data(datadir=datadir)
 
     if config.debug:
-        train_df = train_df[:80 * 100]
-        test_df = test_df[:80 * 100]
+        train_df = train_df[: 80 * 100]
+        test_df = test_df[: 80 * 100]
 
     train_df = add_features(df=train_df)
     test_df = add_features(df=test_df)
@@ -118,69 +118,26 @@ def main(config: Dict[str, Any]):
     test_data = test_data.reshape(-1, 80, test_data.shape[-1])
 
     with tf.device(f"/GPU:{config.gpu_id}"):
-        kf = KFold(n_splits=config.n_splits, shuffle=True, random_state=config.seed)
-        valid_preds = np.empty_like(targets)
         test_preds = []
 
-        for fold, (train_idx, test_idx) in enumerate(kf.split(train_data, targets)):
+        for fold in range(config.n_splits):
             print("-" * 15, ">", f"Fold {fold+1}", "<", "-" * 15)
             savedir = logdir / f"fold{fold}"
-            os.makedirs(savedir, exist_ok=True)
-
-            X_train, X_valid = train_data[train_idx], train_data[test_idx]
-            y_train, y_valid = targets[train_idx], targets[test_idx]
 
             model = build_model(config=config, n_features=len(features))
+            model.load_weights(savedir / "weights_best.h5")
 
-            es = EarlyStopping(
-                monitor="val_loss",
-                patience=config.es_patience,
-                verbose=1,
-                mode="min",
-                restore_best_weights=True,
-            )
-
-            check_point = ModelCheckpoint(
-                filepath=savedir / "weights_best.h5",
-                monitor="val_loss",
-                verbose=1,
-                save_best_only=True,
-                mode="min",
-                save_weights_only=True,
-            )
-
-            schedular = ReduceLROnPlateau(
-                monitor="val_loss", mode="min", **config.schedular
-            )
-
-            history = model.fit(
-                X_train,
-                y_train,
-                validation_data=(X_valid, y_valid),
-                epochs=config.epochs,
-                batch_size=config.batch_size,
-                callbacks=[es, check_point, schedular]
-            )
-
-            pd.DataFrame(history.history).to_csv(savedir / 'log.csv')
-            plot_metric(filepath=savedir / 'log.csv', metric='loss')
-
-            valid_preds[test_idx, :] = model.predict(X_valid).squeeze()
             test_preds.append(
                 model.predict(test_data).squeeze().reshape(-1, 1).squeeze()
             )
 
-            del model, X_train, X_valid, y_train, y_valid
+            del model
             keras.backend.clear_session()
             gc.collect()
-
-    pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv")
 
     if not config.debug:
         submission_df["pressure"] = sum(test_preds) / 5
         submission_df.to_csv(logdir / "submission.csv", index=False)
-
-    shutil.copyfile(Path(__file__), logdir / 'script.py')
 
 
 if __name__ == "__main__":

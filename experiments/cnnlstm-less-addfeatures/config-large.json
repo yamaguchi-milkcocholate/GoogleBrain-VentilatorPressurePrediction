@@ -1,0 +1,42 @@
+{
+    "dirname": "cnnlstm-less-addfeatures",
+    "debug": true,
+    "seed": 42,
+    "n_splits": 5,
+    "gpu_id": 1,
+    "epochs": 300,
+    "batch_size": 512,
+    "cnn": {
+        "filters": [
+            32,
+            16
+        ],
+        "kernel_sizes": [
+            3,
+            6
+        ],
+        "dilation_rate": [
+            1,
+            2
+        ]
+    },
+    "n_units": [
+        500,
+        400,
+        300,
+        200,
+        100
+    ],
+    "n_dense_units": [
+        50
+    ],
+    "lr": 1e-3,
+    "es_patience": 50,
+    "schedular": {
+        "factor": 0.75,
+        "patience": 10,
+        "min_lr": 1e-5,
+        "min_delta": 0,
+        "verbose": 1
+    }
+}

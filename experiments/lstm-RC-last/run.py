@@ -25,17 +25,24 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.utils import seed_every_thing, fetch_data, Config, plot_metric
 
 
-def add_features(df: pd.DataFrame) -> pd.DataFrame:
-    df["area"] = df["time_step"] * df["u_in"]
-    df["area"] = df.groupby("breath_id")["area"].cumsum()
-    df["cross"] = df["u_in"] * df["u_out"]
-    df["cross2"] = df["time_step"] * df["u_out"]
+def add_features(df: pd.DataFrame, is_train: bool=True) -> pd.DataFrame:
+    df["R2"] = df["R"] ** 2
+    df["R-1"] = 1 / df["R"]
+    df["C2"] = df["C"] ** 2
+    df["C-1"] = 1 / df["C"]
 
-    df["u_in_cumsum"] = (df["u_in"]).groupby(df["breath_id"]).cumsum()
-    df["one"] = 1
-    df["count"] = (df["one"]).groupby(df["breath_id"]).cumsum()
-    df["u_in_cummean"] = df["u_in_cumsum"] / df["count"]
+    comb_nms = list()
+    for _r in ["R2", "R-1"]:
+        for _c in ["C2", "C-1"]:
+            df[f"{_r}{_c}"] = df[_r] * df[_c]
+            comb_nms.append(f"{_r}{_c}")
 
+    u_in_nms = ["u_in"]
+    for nm in comb_nms:
+        df[f"u_in_{nm}"] = df[nm] * df["u_in"]
+        u_in_nms.append(f"u_in_{nm}")
+
+     # former
     df["breath_id_lag"] = df["breath_id"].shift(1).fillna(0)
     df["breath_id_lag2"] = df["breath_id"].shift(2).fillna(0)
     df["breath_id_lagsame"] = np.select(
@@ -44,12 +51,44 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df["breath_id_lag2same"] = np.select(
         [df["breath_id_lag2"] == df["breath_id"]], [1], 0
     )
-    df["u_in_lag"] = df["u_in"].shift(1).fillna(0)
-    df["u_in_lag"] = df["u_in_lag"] * df["breath_id_lagsame"]
-    df["u_in_lag2"] = df["u_in"].shift(2).fillna(0)
-    df["u_in_lag2"] = df["u_in_lag2"] * df["breath_id_lag2same"]
+    # latter
+    df["breath_id_-lag"] = df["breath_id"].shift(-1).fillna(0)
+    df["breath_id_-lag2"] = df["breath_id"].shift(-2).fillna(0)
+    df["breath_id_-lagsame"] = np.select(
+        [df["breath_id_-lag"] == df["breath_id"]], [1], 0
+    )
+    df["breath_id_-lag2same"] = np.select(
+        [df["breath_id_-lag2"] == df["breath_id"]], [1], 0
+    )
+
+    # common
+    df["one"] = 1
+    df["count"] = (df["one"]).groupby(df["breath_id"]).cumsum()
+
+    # lag
     df["u_out_lag2"] = df["u_out"].shift(2).fillna(0)
     df["u_out_lag2"] = df["u_out_lag2"] * df["breath_id_lag2same"]
+    df["u_out_-lag2"] = df["u_out"].shift(2).fillna(0)
+    df["u_out_-lag2"] = df["u_out_-lag2"] * df["breath_id_-lag2same"]
+
+    for u_in_nm in u_in_nms:
+        df[f"area_{u_in_nm}"] = df["time_step"] * df[u_in_nm]
+        df[f"area_{u_in_nm}"] = df.groupby("breath_id")[f"area_{u_in_nm}"].cumsum()
+        df[f"cross_{u_in_nm}"] = df[u_in_nm] * df["u_out"]
+        df["cross2"] = df["time_step"] * df["u_out"]
+
+        df[f"{u_in_nm}_cumsum"] = (df[u_in_nm]).groupby(df["breath_id"]).cumsum()
+        df[f"{u_in_nm}_cummean"] = df[f"{u_in_nm}_cumsum"] / df["count"]
+
+        df[f"{u_in_nm}_lag"] = df[u_in_nm].shift(1).fillna(0)
+        df[f"{u_in_nm}_lag"] = df[f"{u_in_nm}_lag"] * df["breath_id_lagsame"]
+        df[f"{u_in_nm}_lag2"] = df[u_in_nm].shift(2).fillna(0)
+        df[f"{u_in_nm}_lag2"] = df[f"{u_in_nm}_lag2"] * df["breath_id_lag2same"]
+
+        df[f"{u_in_nm}_-lag"] = df[u_in_nm].shift(1).fillna(0)
+        df[f"{u_in_nm}_-lag"] = df[f"{u_in_nm}_-lag"] * df["breath_id_-lagsame"]
+        df[f"{u_in_nm}_-lag2"] = df[u_in_nm].shift(2).fillna(0)
+        df[f"{u_in_nm}_-lag2"] = df[f"{u_in_nm}_-lag2"] * df["breath_id_-lag2same"]
 
     df["R"] = df["R"].astype(str)
     df["C"] = df["C"].astype(str)
@@ -132,13 +171,13 @@ def main(config: Dict[str, Any]):
 
             model = build_model(config=config, n_features=len(features))
 
-            es = EarlyStopping(
-                monitor="val_loss",
-                patience=config.es_patience,
-                verbose=1,
-                mode="min",
-                restore_best_weights=True,
-            )
+            # es = EarlyStopping(
+            #     monitor="val_loss",
+            #     patience=config.es_patience,
+            #     verbose=1,
+            #     mode="min",
+            #     restore_best_weights=True,
+            # )
 
             check_point = ModelCheckpoint(
                 filepath=savedir / "weights_best.h5",
@@ -159,8 +198,10 @@ def main(config: Dict[str, Any]):
                 validation_data=(X_valid, y_valid),
                 epochs=config.epochs,
                 batch_size=config.batch_size,
-                callbacks=[es, check_point, schedular]
+                callbacks=[check_point, schedular]
+                # callbacks=[es, check_point, schedular]
             )
+            model.save_weights(savedir / 'weights_final.h5')
 
             pd.DataFrame(history.history).to_csv(savedir / 'log.csv')
             plot_metric(filepath=savedir / 'log.csv', metric='loss')

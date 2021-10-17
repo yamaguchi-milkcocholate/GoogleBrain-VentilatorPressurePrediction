@@ -25,7 +25,7 @@ sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 from src.utils import seed_every_thing, fetch_data, Config, plot_metric
 
 
-def add_features(df: pd.DataFrame) -> pd.DataFrame:
+def add_features(df: pd.DataFrame, is_train: bool=True) -> pd.DataFrame:
     df["area"] = df["time_step"] * df["u_in"]
     df["area"] = df.groupby("breath_id")["area"].cumsum()
     df["cross"] = df["u_in"] * df["u_out"]
@@ -51,10 +51,9 @@ def add_features(df: pd.DataFrame) -> pd.DataFrame:
     df["u_out_lag2"] = df["u_out"].shift(2).fillna(0)
     df["u_out_lag2"] = df["u_out_lag2"] * df["breath_id_lag2same"]
 
-    df["R"] = df["R"].astype(str)
-    df["C"] = df["C"].astype(str)
-    df["RC"] = df["R"] + df["C"]
     df = pd.get_dummies(df)
+    if is_train:
+        df["pressure"] = (1 - df["u_out"]) * df["pressure"]
     return df
 
 
@@ -88,7 +87,7 @@ def main(config: Dict[str, Any]):
         test_df = test_df[:80 * 100]
 
     train_df = add_features(df=train_df)
-    test_df = add_features(df=test_df)
+    test_df = add_features(df=test_df, is_train=False)
 
     features = list(
         train_df.drop(
@@ -132,13 +131,13 @@ def main(config: Dict[str, Any]):
 
             model = build_model(config=config, n_features=len(features))
 
-            es = EarlyStopping(
-                monitor="val_loss",
-                patience=config.es_patience,
-                verbose=1,
-                mode="min",
-                restore_best_weights=True,
-            )
+            # es = EarlyStopping(
+            #     monitor="val_loss",
+            #     patience=config.es_patience,
+            #     verbose=1,
+            #     mode="min",
+            #     restore_best_weights=True,
+            # )
 
             check_point = ModelCheckpoint(
                 filepath=savedir / "weights_best.h5",
@@ -159,15 +158,17 @@ def main(config: Dict[str, Any]):
                 validation_data=(X_valid, y_valid),
                 epochs=config.epochs,
                 batch_size=config.batch_size,
-                callbacks=[es, check_point, schedular]
+                callbacks=[check_point, schedular]
+                # callbacks=[es, check_point, schedular]
             )
+            model.save_weights(savedir / 'weights_final.h5')
 
             pd.DataFrame(history.history).to_csv(savedir / 'log.csv')
             plot_metric(filepath=savedir / 'log.csv', metric='loss')
 
-            valid_preds[test_idx, :] = model.predict(X_valid).squeeze()
+            valid_preds[test_idx, :] = np.clip(model.predict(X_valid).squeeze(), 0, 100)
             test_preds.append(
-                model.predict(test_data).squeeze().reshape(-1, 1).squeeze()
+                np.clip(model.predict(test_data).squeeze().reshape(-1, 1).squeeze(), 0, 100)
             )
 
             del model, X_train, X_valid, y_train, y_valid

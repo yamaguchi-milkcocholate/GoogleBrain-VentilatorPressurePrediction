@@ -132,13 +132,13 @@ def main(config: Dict[str, Any]):
 
             model = build_model(config=config, n_features=len(features))
 
-            es = EarlyStopping(
-                monitor="val_loss",
-                patience=config.es_patience,
-                verbose=1,
-                mode="min",
-                restore_best_weights=True,
-            )
+            # es = EarlyStopping(
+            #     monitor="val_loss",
+            #     patience=config.es_patience,
+            #     verbose=1,
+            #     mode="min",
+            #     restore_best_weights=True,
+            # )
 
             check_point = ModelCheckpoint(
                 filepath=savedir / "weights_best.h5",
@@ -159,8 +159,10 @@ def main(config: Dict[str, Any]):
                 validation_data=(X_valid, y_valid),
                 epochs=config.epochs,
                 batch_size=config.batch_size,
-                callbacks=[es, check_point, schedular]
+                callbacks=[check_point, schedular]
+                # callbacks=[es, check_point, schedular]
             )
+            model.save_weights(savedir / 'weights_final.h5')
 
             pd.DataFrame(history.history).to_csv(savedir / 'log.csv')
             plot_metric(filepath=savedir / 'log.csv', metric='loss')
