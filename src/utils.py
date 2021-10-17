@@ -214,6 +214,7 @@ class CustomL1Loss(keras.callbacks.Callback):
         mae = np.mean(mae)
         logs['val_custom_loss'] = mae
         self.logs.append(mae)
+        print(f"customL1: {mae:.5f}")
 
         if self.best_score > mae:
             self.best_score = mae
