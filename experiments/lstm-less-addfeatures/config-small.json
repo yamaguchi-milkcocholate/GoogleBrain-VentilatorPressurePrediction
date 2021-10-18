@@ -1,21 +1,19 @@
 {
-    "dirname": "lstm-less-addfeatures-custom2",
+    "dirname": "lstm-less-addfeatures-small-custom-huber",
     "debug": false,
     "seed": 42,
-    "n_splits": 5,
-    "gpu_id": 1,
+    "n_splits": 10,
+    "gpu_id": 0,
     "epochs": 300,
     "batch_size": 512,
     "n_units": [
-        850,
-        700,
-        550,
         400,
-        250,
+        300,
+        200,
         100
     ],
     "n_dense_units": [
-        100, 50
+        50
     ],
     "lr": 1e-3,
     "es_patience": 50,

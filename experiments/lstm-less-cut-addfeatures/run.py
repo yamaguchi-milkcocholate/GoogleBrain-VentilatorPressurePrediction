@@ -113,9 +113,9 @@ def _add_features(df_):
     return df
 
 
-def calc_stats(df_):
-    first_df = df_.loc[0::80]
-    last_df = df_.loc[79::80]
+def calc_stats(df_, n_timesteps):
+    first_df = df_.loc[0::n_timesteps]
+    last_df = df_.loc[n_timesteps - 1::n_timesteps]
 
     df = pd.DataFrame(
         {"breath_id": first_df["breath_id"].values, "RC": first_df["RC"].values, "R": first_df["R"], "C": first_df["C"]}
@@ -143,8 +143,8 @@ def calc_stats(df_):
     return df
 
 
-def add_features(df_, is_debug, cachedir, prefix):
-    filepath = cachedir / f"{prefix}_lstm-less-addfeatures_debug{is_debug}.csv"
+def add_features(df_, is_debug, cachedir, prefix, n_timesteps):
+    filepath = cachedir / f"{prefix}_lstm-less-cut-addfeatures_debug{is_debug}.csv"
 
     if os.path.exists(filepath):
         df = pd.read_csv(filepath)
@@ -152,7 +152,7 @@ def add_features(df_, is_debug, cachedir, prefix):
 
     df = df_.copy()
     df = _add_features(df)
-    df_stats = calc_stats(df)
+    df_stats = calc_stats(df, n_timesteps=n_timesteps)
     df_stats = df_stats.set_index("breath_id")
     cols = df_stats.columns
     for c in cols:
@@ -178,7 +178,7 @@ def add_features(df_, is_debug, cachedir, prefix):
 
 
 def build_model(config: Config, n_features) -> keras.models.Sequential:
-    model = keras.models.Sequential([keras.layers.Input(shape=(80, n_features))])
+    model = keras.models.Sequential([keras.layers.Input(shape=(config.cut, n_features))])
     for n_unit in config.n_units:
         model.add(
             keras.layers.Bidirectional(
@@ -211,16 +211,20 @@ def main(config: Dict[str, Any]):
 
     config.to_json(logdir / "config.json")
     train_df, test_df, submission_df = fetch_custom_data(datadir=datadir, n_splits=config.n_splits)
+    train_df["count"], test_df["count"] = (np.arange(train_df.shape[0]) % 80).astype(int), (np.arange(test_df.shape[0]) % 80).astype(int)
+    train_df = train_df[train_df["count"] < config.cut].reset_index(drop=True)
+    test_preds_idx = test_df["count"] < config.cut
+    test_df = test_df[test_preds_idx].reset_index(drop=True)
     test_df["pressure"] = 0
 
     if config.debug:
-        train_df = train_df[: 80 * 1000]
-        test_df = test_df[: 80 * 1000]
+        train_df = train_df[: config.cut * 1000]
+        test_df = test_df[: config.cut * 1000]
 
-    train_df = add_features(train_df, config.debug, cachedir, "train")
-    test_df = add_features(test_df, config.debug, cachedir, "test")
+    train_df = add_features(train_df, config.debug, cachedir, "train", n_timesteps=config.cut)
+    test_df = add_features(test_df, config.debug, cachedir, "test", n_timesteps=config.cut)
 
-    kfolds = train_df.iloc[0::80]['kfold'].values
+    kfolds = train_df.iloc[0::config.cut]['kfold'].values
 
     features = list(train_df.drop(["kfold", "pressure"], axis=1).columns)
     pprint(features)
@@ -234,9 +238,9 @@ def main(config: Dict[str, Any]):
     test_df[cont_features] = RS.transform(test_df[cont_features])
     train_data, test_data = train_df[features].values, test_df[features].values
 
-    train_data = train_data.reshape(-1, 80, train_data.shape[-1])
-    targets = train_df[["pressure"]].to_numpy().reshape(-1, 80)
-    test_data = test_data.reshape(-1, 80, test_data.shape[-1])
+    train_data = train_data.reshape(-1, config.cut, train_data.shape[-1])
+    targets = train_df[["pressure"]].to_numpy().reshape(-1, config.cut)
+    test_data = test_data.reshape(-1, config.cut, test_data.shape[-1])
 
     with tf.device(f"/GPU:{config.gpu_id}"):
         valid_preds = np.empty_like(targets)
@@ -306,7 +310,7 @@ def main(config: Dict[str, Any]):
     pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv")
 
     if not config.debug:
-        submission_df["pressure"] = np.median(test_preds, axis=0)
+        submission_df.loc[test_preds_idx, "pressure"] = np.median(test_preds, axis=0)
         submission_df.to_csv(logdir / "submission.csv", index=False)
 
     shutil.copyfile(Path(__file__), logdir / "script.py")

@@ -144,6 +144,12 @@ def calc_stats(df_):
 
 
 def add_features(df_):
+    filepath = cachedir / f"{prefix}_lstm-less-less-addfeatures_debug{is_debug}.csv"
+
+    if os.path.exists(filepath):
+        df = pd.read_csv(filepath)
+        return reduce_mem_usage(df)
+
     df = df_.copy()
     df = _add_features(df)
     df_stats = calc_stats(df)
@@ -165,8 +171,10 @@ def add_features(df_):
         axis=1,
         inplace=True,
     )
+    df = reduce_mem_usage(df)
+    df.to_csv(filepath, index=False)
 
-    return reduce_mem_usage(df)
+    return df
 
 
 def build_model(config: Config, n_features) -> keras.models.Sequential:
@@ -206,8 +214,8 @@ def main(config: Dict[str, Any]):
         train_df = train_df[: 80 * 100]
         test_df = test_df[: 80 * 100]
 
-    train_df = add_features(train_df)
-    test_df = add_features(test_df)
+    train_df = add_features(train_df, config.debug, cachedir, "train")
+    test_df = add_features(test_df, config.debug, cachedir, "test")
 
     kfolds = train_df.iloc[0::80]['kfold'].values
 
@@ -285,12 +293,8 @@ def main(config: Dict[str, Any]):
             pd.DataFrame(history.history).to_csv(savedir / "log.csv")
             plot_metric(filepath=savedir / "log.csv", metric="loss")
 
-            valid_preds[test_idx, :] = np.clip(model.predict(X_valid).squeeze(), 0, 100)
-            test_preds.append(
-                np.clip(
-                    model.predict(test_data).squeeze().reshape(-1, 1).squeeze(), 0, 100
-                )
-            )
+            valid_preds[test_idx, :] = model.predict(X_valid).squeeze()
+            test_preds.append(model.predict(test_data).squeeze().reshape(-1, 1).squeeze())
 
             del model, X_train, X_valid, y_train, y_valid
             keras.backend.clear_session()
