@@ -111,9 +111,9 @@ def fetch_data(datadir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
     return train, test, submission
 
 
-def fetch_custom_data(datadir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def fetch_custom_data(datadir: Path, n_splits: int) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     print("fetching data ...")
-    train = pd.read_csv(datadir / "train_RC_kfold5_seed42.csv", index_col=0)
+    train = pd.read_csv(datadir / f"train_RC_kfold{n_splits}_seed42.csv", index_col=0)
     test = pd.read_csv(datadir / "test.csv")
     test["RC"] = test["R"].astype(str) + "_" + test["C"].astype(str)
     submission = pd.read_csv(datadir / "sample_submission.csv")
