@@ -159,17 +159,17 @@ class VentilatorDataset(Dataset):
 class PositionalEncoding(nn.Module):
     """Positional Encoding for Transormer Model"""
 
-    def __init__(self, n_features: int, dropout: Optional[float] = 0.1, max_len=80):
+    def __init__(self, emb_dim: int, dropout: Optional[float] = 0.1, max_len=80):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
-        pe = torch.zeros(max_len, n_features)
+        pe = torch.zeros(max_len, emb_dim)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(
-            torch.arange(0, n_features, 2).float() * (-math.log(10000.0) / n_features)
+            torch.arange(0, emb_dim, 2).float() * (-math.log(10000.0) / emb_dim)
         )
         pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)[:, : (n_features // 2)]
+        pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0).transpose(0, 1)
         self.register_buffer("pe", pe)
 
