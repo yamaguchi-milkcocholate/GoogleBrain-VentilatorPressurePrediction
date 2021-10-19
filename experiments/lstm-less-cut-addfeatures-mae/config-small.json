@@ -1,9 +1,9 @@
 {
-    "dirname": "lstm-less-addfeatures-cut-small-custom-huber",
+    "dirname": "lstm-less-addfeatures-cut-small-custom-mae",
     "debug": false,
     "seed": 42,
     "n_splits": 10,
-    "gpu_id": 1,
+    "gpu_id": 2,
     "epochs": 300,
     "batch_size": 512,
     "n_units": [
