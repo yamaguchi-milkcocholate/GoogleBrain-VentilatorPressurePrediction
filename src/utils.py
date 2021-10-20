@@ -219,3 +219,33 @@ class CustomL1Loss(keras.callbacks.Callback):
         if self.best_score > mae:
             self.best_score = mae
             self.model.save_weights(self.filepath)
+
+
+class TransformerEncoder(keras.layers.Layer):
+    def __init__(self, dim_emb: int, n_heads: int, dim_feedforward: int, dropout: float = 0.):
+        super(TransformerEncoder, self).__init__()
+        # Normalization and Attention
+        self.layer_norm1 = keras.layers.LayerNormalization(epsilon=1e-6)
+        self.multi_head_attention = keras.layers.MultiHeadAttention(
+            key_dim=dim_emb, num_heads=n_heads, dropout=dropout
+        )
+        self.dropout = keras.layers.Dropout(dropout)
+
+        # Feedforward
+        self.layer_norm2 = keras.layers.LayerNormalization(epsilon=1e-6)
+        self.conv1d1 = keras.layers.Conv1D(filters=dim_feedforward, kernel_size=1, activation="relu")
+        self.conv1d2 = keras.layers.Conv1D(filters=dim_emb, kernel_size=1)
+
+    def call(self, input):
+        x = self.layer_norm1(input)
+        x = self.multi_head_attention(x, x)
+        x = self.dropout(x)
+
+        res = x + input
+
+        x = self.layer_norm2(x)
+        x = self.conv1d1(x)
+        x = self.dropout(x)
+        x = self.conv1d2(x)
+
+        return x + res
