@@ -459,6 +459,9 @@ def main(config: Dict[str, Any]):
         gc.collect()
         with torch.cuda.device(config.device):
             torch.cuda.empty_cache()
+
+    pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv")
+
     if not config.debug:
         submission_df.loc[test_preds_idx, "pressure"] = np.median(test_preds, axis=0)
         submission_df.to_csv(logdir / "submission.csv", index=False)
