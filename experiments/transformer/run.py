@@ -414,7 +414,7 @@ def main(config: Dict[str, Any]):
             log["score_loss"].append(val_metric_score)
 
             if best_score > val_metric_score:
-                torch.save(model.state_dict, str(savedir / "weights_best.pt"))
+                torch.save(model.state_dict(), str(savedir / "weights_best.pt"))
                 log_str += f"score improved from {best_score:.3f} to {val_metric_score:.3f}"
                 best_score = val_metric_score
 
