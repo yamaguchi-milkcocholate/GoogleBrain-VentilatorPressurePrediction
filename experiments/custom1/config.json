@@ -6,12 +6,25 @@
     "gpu_id": 1,
     "epochs": 300,
     "batch_size": 512,
+    "transformer_params": {
+        "encoder_params": {
+            "dim_emb": 280,
+            "n_heads": 8,
+            "dim_feedforward": 1024,
+            "dropout": 0
+        },
+        "num_transformer_blocks": 4,
+        "mlp_units": [
+            50
+        ],
+        "mlp_dropout": 0
+    },
     "bilstm_params": {
         "units": [
             1024,
+            768,
             512,
-            256,
-            128
+            256
         ],
         "mlp_units": [
             50
