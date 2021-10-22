@@ -283,7 +283,7 @@ def main(config: Dict[str, Any]):
             )
 
             schedular = ReduceLROnPlateau(
-                monitor="val_loss", mode="min", **config.schedular
+                mode="min", **config.schedular
             )
 
             history = model.fit(
