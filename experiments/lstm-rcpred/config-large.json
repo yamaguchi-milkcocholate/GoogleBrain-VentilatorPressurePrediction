@@ -1,5 +1,5 @@
 {
-    "dirname": "lstm-knn-rcpred",
+    "dirname": "lstm-rcpred",
     "debug": false,
     "seed": 42,
     "n_splits": 10,
