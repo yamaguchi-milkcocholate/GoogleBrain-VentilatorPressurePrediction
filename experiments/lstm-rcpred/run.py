@@ -83,7 +83,8 @@ def main(config: Dict[str, Any]):
     train_df = reduce_mem_usage(pd.read_csv(cachedir / f"train-rc-pred-debug{config.debug}.csv"))
     test_df = reduce_mem_usage(pd.read_csv(cachedir / f"test-rc-pred-debug{config.debug}.csv"))
 
-    ignore_features = ["R_20", "R_5", "R_50", "C_10", "C_20", "C_50"] + [c for c in train_df.columns if "neib" in c]
+    # ignore_features = ["R_20", "R_5", "R_50", "C_10", "C_20", "C_50"] + [c for c in train_df.columns if "neib" in c]
+    ignore_features = [c for c in train_df.columns if "neib" in c]
 
     features = list(train_df.drop(["kfold", "pressure"] + ignore_features, axis=1).columns)
     pprint(features)
