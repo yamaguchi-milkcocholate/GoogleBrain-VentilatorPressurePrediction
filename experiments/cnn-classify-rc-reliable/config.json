@@ -1,5 +1,5 @@
 {
-    "dirname": "cnn-classify-rc-reliable_3",
+    "dirname": "cnn-classify-rc-reliable_4",
     "debug": false,
     "seed": 42,
     "n_splits": 10,
@@ -24,7 +24,7 @@
         ]
     },
     "lr": 2e-4,
-    "es_patience": 10,
+    "es_patience": 50,
     "schedular": {
         "monitor": "val_loss",
         "factor": 0.75,
