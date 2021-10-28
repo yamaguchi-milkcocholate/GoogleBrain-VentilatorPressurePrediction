@@ -140,7 +140,7 @@ def main(config: Dict[str, Any]):
             customL1 = CustomL1Loss(
                 X_valid=X_valid_reliable,
                 y_valid=y_valid_reliable,
-                u_outs=X_valid[:, :, features.index("u_out")],
+                u_outs=X_valid_reliable[:, :, features.index("u_out")],
                 filepath=savedir / "weights_custom_best.h5",
             )
 

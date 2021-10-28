@@ -27,7 +27,7 @@ from src.utils import seed_every_thing, Config, plot_metric, reduce_tf_gpu_memor
 
 
 def build_model(config: Config, n_features, n_classes) -> keras.models.Sequential:
-    model = keras.models.Sequential([keras.layers.Input(shape=(config.cut, n_features))])
+    model = keras.models.Sequential([keras.layers.Input(shape=(80, n_features))])
     for filters, kernel_size, dilation_rate in zip(
         config.conv1d["filters"], config.conv1d["kernel_sizes"], config.conv1d["dilation_rates"]
     ):
@@ -59,15 +59,15 @@ def main(config: Dict[str, Any]):
 
     config.to_json(logdir / "config.json")
     train_df = reduce_mem_usage(pd.read_csv(cachedir / f"train-reliable-debug{config.debug}.csv"))
-    test_df = reduce_mem_usage(pd.read_csv(cachedir / f"test_lstm-less-cut-addfeatures_debug{config.debug}.csv"))
+    test_df = reduce_mem_usage(pd.read_csv(cachedir / f"test_lstm-less-addfeatures_debug{config.debug}.csv"))
 
-    kfolds = train_df.iloc[0 :: config.cut]["kfold"].values
-    reliables = train_df.iloc[0 :: config.cut]["is_reliable"].values
+    kfolds = train_df.iloc[0::80]["kfold"].values
+    reliables = train_df.iloc[0::80]["is_reliable"].values
 
     target_cols = [f for f in train_df.columns if "RC_" in f]
     ignore_cols = [f for f in train_df.columns if ("R_" in f) or ("C_" in f)]
-    features = list(train_df.drop(["kfold", "pressure", "is_reliable"] + target_cols + ignore_cols, axis=1).columns)
-    # features = [f for f in train_df.columns if "u_in" in f]
+    # features = list(train_df.drop(["kfold", "pressure", "is_reliable"] + target_cols + ignore_cols, axis=1).columns)
+    features = [f for f in train_df.columns if ("u_in" in f) or ("u_out" in f)]
     pprint(features)
     print(len(features))
 
@@ -79,9 +79,9 @@ def main(config: Dict[str, Any]):
     test_df[cont_features] = RS.transform(test_df[cont_features])
     train_data, test_data = train_df[features].values, test_df[features].values
 
-    train_data = train_data.reshape(-1, config.cut, train_data.shape[-1])
-    targets = train_df.iloc[0 :: config.cut][target_cols].to_numpy()
-    test_data = test_data.reshape(-1, config.cut, test_data.shape[-1])
+    train_data = train_data.reshape(-1, 80, train_data.shape[-1])
+    targets = train_df.iloc[0::80][target_cols].to_numpy()
+    test_data = test_data.reshape(-1, 80, test_data.shape[-1])
 
     with tf.device(f"/GPU:{config.gpu_id}"):
         valid_preds = np.empty_like(targets).astype(np.float32)
