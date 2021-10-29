@@ -13,43 +13,36 @@ from typing import *
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
-from tensorflow.keras.metrics import categorical_accuracy
 
 from sklearn.metrics import mean_absolute_error as mae
 from sklearn.preprocessing import RobustScaler
+from sklearn.model_selection import KFold
 
 import sys
 
 print(str(Path(__file__).resolve().parent.parent.parent))
 sys.path.append(str(Path(__file__).resolve().parent.parent.parent))
 
-from src.utils import seed_every_thing, Config, plot_metric, reduce_tf_gpu_memory, reduce_mem_usage, fetch_custom_data
+from src.utils import (
+    seed_every_thing,
+    fetch_data,
+    Config,
+    plot_metric,
+    reduce_tf_gpu_memory,
+    reduce_mem_usage,
+    fetch_custom_data,
+    CustomL1Loss,
+)
 
 
-def build_model(config: Config, n_features, n_classes) -> keras.models.Sequential:
-    model = keras.models.Sequential([keras.layers.Input(shape=(80, n_features))])
+def build_model(config: Config, n_features) -> keras.models.Sequential:
+    model = keras.models.Sequential([keras.layers.Input(shape=(config.cut, n_features))])
     for n_unit in config.n_units:
-        model.add(
-            keras.layers.Bidirectional(
-                keras.layers.LSTM(
-                    n_unit,
-                    return_sequences=True,
-                    dropout=config.dropout
-                )
-            )
-        )
+        model.add(keras.layers.Bidirectional(keras.layers.LSTM(n_unit, return_sequences=True, dropout=config.dropout)))
     for n_unit in config.n_dense_units:
         model.add(keras.layers.Dense(n_unit, activation="selu"))
-        model.add(keras.layers.BatchNormalization())
-    model.add(keras.layers.Flatten())
-    model.add(keras.layers.BatchNormalization())
-    model.add(keras.layers.Dense(n_classes, activation="softmax"))
-
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=config.lr),
-        loss="categorical_crossentropy",
-        metrics=[categorical_accuracy],
-    )
+    model.add(keras.layers.Dense(1))
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss="mae")
     return model
 
 
@@ -59,25 +52,30 @@ def main(config: Dict[str, Any]):
     reduce_tf_gpu_memory(gpu_id=config.gpu_id)
 
     basedir = Path(__file__).resolve().parent
+    datadir = basedir / ".." / ".." / "data"
     logdir = basedir / ".." / ".." / "logs" / config.dirname
     cachedir = basedir / ".." / ".." / "cache"
     os.makedirs(logdir, exist_ok=True)
 
     config.to_json(logdir / "config.json")
-    train_df = reduce_mem_usage(pd.read_csv(cachedir / f"train-reliable-debug{config.debug}.csv"))
-    test_df = reduce_mem_usage(pd.read_csv(cachedir / f"test_lstm-less-addfeatures_debug{config.debug}.csv"))
+    _, test_df, submission_df = fetch_custom_data(datadir=datadir, n_splits=config.n_splits)
+    test_df["count"] = (np.arange(test_df.shape[0]) % 80).astype(int)
+    test_preds_idx = test_df["count"] < config.cut
+    test_df = test_df[test_preds_idx].reset_index(drop=True)
+    test_df["pressure"] = 0
 
-    kfolds = train_df.iloc[0::80]["kfold"].values
-    reliables = train_df.iloc[0::80]["is_reliable"].values
+    train_df = reduce_mem_usage(pd.read_csv(cachedir / f"train_lstm-less-cut-addfeatures_debug{config.debug}.csv"))
+    test_df = reduce_mem_usage(pd.read_csv(cachedir / f"test_lstm-less-cut-addfeatures_debug{config.debug}.csv"))
 
-    target_cols = [f for f in train_df.columns if "RC_" in f]
-    ignore_cols = [f for f in train_df.columns if ("R_" in f) or ("C_" in f)]
-    features = list(train_df.drop(["kfold", "pressure", "is_reliable"] + target_cols + ignore_cols, axis=1).columns)
-    # features = [f for f in train_df.columns if ("u_in" in f) or ("u_out" in f)]
+    kfolds = train_df.iloc[0 :: config.cut]["kfold"].values
+
+    features = list(train_df.drop(["kfold", "pressure"], axis=1).columns)
     pprint(features)
     print(len(features))
 
-    cont_features = [f for f in features if ("u_out" not in f)]
+    cont_features = [
+        f for f in features if ("RC_" not in f) and ("R_" not in f) and ("C_" not in f) and ("u_out" not in f)
+    ]
     pprint(cont_features)
 
     RS = RobustScaler()
@@ -85,36 +83,39 @@ def main(config: Dict[str, Any]):
     test_df[cont_features] = RS.transform(test_df[cont_features])
     train_data, test_data = train_df[features].values, test_df[features].values
 
-    train_data = train_data.reshape(-1, 80, train_data.shape[-1])
-    targets = train_df.iloc[0::80][target_cols].to_numpy()
-    test_data = test_data.reshape(-1, 80, test_data.shape[-1])
+    train_data = train_data.reshape(-1, config.cut, train_data.shape[-1])
+    targets = train_df[["pressure"]].to_numpy().reshape(-1, config.cut)
+    test_data = test_data.reshape(-1, config.cut, test_data.shape[-1])
 
     with tf.device(f"/GPU:{config.gpu_id}"):
-        valid_preds = np.empty_like(targets).astype(np.float32)
+        valid_preds = np.empty_like(targets)
         test_preds = []
 
         for fold in range(config.n_splits):
             train_idx, test_idx = (kfolds != fold), (kfolds == fold)
             print("-" * 15, ">", f"Fold {fold+1}", "<", "-" * 15)
-            verbose_str = f"data size declines {train_idx.sum()} ⇨ "
-            train_idx = np.logical_and(train_idx, reliables)
-            verbose_str += f"{train_idx.sum()}"
-            print(verbose_str)
-
             savedir = logdir / f"fold{fold}"
             os.makedirs(savedir, exist_ok=True)
 
             X_train, X_valid = train_data[train_idx], train_data[test_idx]
             y_train, y_valid = targets[train_idx], targets[test_idx]
 
-            model = build_model(config=config, n_features=len(features), n_classes=len(target_cols))
+            model = build_model(config=config, n_features=len(features))
+            model.load_weights(logdir.parent / config.weightsdir / f"fold{fold}" / "weights_custom_best.h5")
 
-            es = EarlyStopping(
-                monitor="val_loss",
-                patience=config.es_patience,
-                verbose=1,
-                mode="min",
-                restore_best_weights=True,
+            # es = EarlyStopping(
+            #     monitor="val_loss",
+            #     patience=config.es_patience,
+            #     verbose=1,
+            #     mode="min",
+            #     restore_best_weights=True,
+            # )
+
+            customL1 = CustomL1Loss(
+                X_valid=X_valid,
+                y_valid=y_valid,
+                u_outs=X_valid[:, :, features.index("u_out")],
+                filepath=savedir / "weights_custom_best.h5",
             )
 
             check_point = ModelCheckpoint(
@@ -134,24 +135,27 @@ def main(config: Dict[str, Any]):
                 validation_data=(X_valid, y_valid),
                 epochs=config.epochs,
                 batch_size=config.batch_size,
-                callbacks=[es, check_point, schedular],
+                callbacks=[check_point, schedular, customL1],
             )
             model.save_weights(savedir / "weights_final.h5")
 
-            model.load_weights(savedir / "weights_best.h5")
+            model.load_weights(savedir / "weights_custom_best.h5")
 
             pd.DataFrame(history.history).to_csv(savedir / "log.csv")
             plot_metric(filepath=savedir / "log.csv", metric="loss")
 
-            valid_preds[test_idx, :] = model.predict(X_valid).reshape(-1, len(target_cols))
-            test_preds.append(model.predict(test_data).reshape(-1, len(target_cols)))
+            valid_preds[test_idx, :] = model.predict(X_valid).squeeze()
+            test_preds.append(model.predict(test_data).squeeze().reshape(-1, 1).squeeze())
 
             del model, X_train, X_valid, y_train, y_valid
             keras.backend.clear_session()
             gc.collect()
 
-    pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv", index=False)
-    pd.DataFrame(np.mean(test_preds, axis=0)).to_csv(logdir / "test_preds.csv", index=False)
+    pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv")
+
+    if not config.debug:
+        submission_df.loc[test_preds_idx, "pressure"] = np.median(test_preds, axis=0)
+        submission_df.to_csv(logdir / "submission.csv", index=False)
 
     shutil.copyfile(Path(__file__), logdir / "script.py")
 
