@@ -35,7 +35,7 @@ from src.utils import (
 )
 
 
-def build_model(config: Config, n_features, basemodeldir) -> keras.models.Sequential:
+def build_model(config: Config, n_features) -> keras.models.Sequential:
     model = keras.models.Sequential([keras.layers.Input(shape=(config.cut, n_features))])
     for n_unit in config.n_units:
         model.add(
@@ -48,17 +48,13 @@ def build_model(config: Config, n_features, basemodeldir) -> keras.models.Sequen
         )
     for n_unit in config.n_dense_units:
         model.add(keras.layers.Dense(n_unit, activation="selu"))
-    model.add(keras.layers.Dense(1))
-    model.load_weights(basemodeldir / "weights_custom_best.h5")
 
-    embed = model.layers[-2].output
-    embed = keras.layers.Dense(config.embed_dim, activation="selu")(embed)
-    concat = keras.layers.Flatten()(embed)
-    outputs = keras.layers.Dense(config.cut)(concat)
+    model.add(keras.layers.Dense(config.embed_dim, activation="selu"))
+    model.add(keras.layers.Flatten())
+    model.add(keras.layers.Dense(config.cut))
 
-    fc_model = keras.models.Model(inputs=model.inputs, outputs=outputs)
-    fc_model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss="mae")
-    return fc_model
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss="mae")
+    return model
 
 
 def main(config: Dict[str, Any]):
@@ -118,7 +114,6 @@ def main(config: Dict[str, Any]):
             model = build_model(
                 config=config,
                 n_features=len(features),
-                basemodeldir=logdir.parent / config.basemodeldir / f"fold{fold}",
             )
 
             # es = EarlyStopping(
