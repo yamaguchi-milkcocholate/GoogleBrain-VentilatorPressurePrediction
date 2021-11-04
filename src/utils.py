@@ -209,7 +209,7 @@ class CustomL1Loss(keras.callbacks.Callback):
 
     def on_epoch_end(self, epoch, logs={}):
         y_preds = self.model.predict(self.X_valid).squeeze()
-
+        
         mae = compute_metric(y_trues=self.y_valid, y_preds=y_preds, u_outs=self.u_outs)
         mae = np.mean(mae)
         logs['val_custom_loss'] = mae

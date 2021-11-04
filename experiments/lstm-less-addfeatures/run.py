@@ -192,9 +192,7 @@ def build_model(config: Config, n_features) -> keras.models.Sequential:
         model.add(keras.layers.Dense(n_unit, activation="selu"))
     model.add(keras.layers.Dense(1))
 
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=config.lr),
-        loss=keras.losses.Huber(delta=0.3))
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss="mae")
     return model
 
 
@@ -219,6 +217,7 @@ def main(config: Dict[str, Any]):
 
     train_df = add_features(train_df, config.debug, cachedir, "train")
     test_df = add_features(test_df, config.debug, cachedir, "test")
+
 
     kfolds = train_df.iloc[0::80]['kfold'].values
 
@@ -306,6 +305,7 @@ def main(config: Dict[str, Any]):
     pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv")
 
     if not config.debug:
+
         submission_df["pressure"] = np.median(test_preds, axis=0)
         submission_df.to_csv(logdir / "submission.csv", index=False)
 
