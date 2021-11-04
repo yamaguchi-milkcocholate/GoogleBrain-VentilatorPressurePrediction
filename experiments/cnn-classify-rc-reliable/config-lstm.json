@@ -1,0 +1,28 @@
+{
+    "dirname": "cnn-classify-rc-reliable_5",
+    "debug": false,
+    "seed": 42,
+    "n_splits": 10,
+    "gpu_id": 2,
+    "epochs": 100,
+    "batch_size": 512,
+    "n_units": [
+        512,
+        256,
+        128
+    ],
+    "n_dense_units": [
+        64, 4
+    ],
+    "dropout": 0.1,
+    "lr": 1e-3,
+    "es_patience": 20,
+    "schedular": {
+        "monitor": "val_loss",
+        "factor": 0.75,
+        "patience": 5,
+        "min_lr": 1e-5,
+        "min_delta": 0,
+        "verbose": 1
+    }
+}

@@ -1,0 +1,57 @@
+{
+    "dirname": "custom2",
+    "debug": false,
+    "seed": 42,
+    "n_splits": 10,
+    "gpu_id": 0,
+    "epochs": 300,
+    "batch_size": 512,
+    "bilstm_params": {
+        "units": [
+            1024,
+            768,
+            512,
+            256,
+            128
+        ],
+        "mlp_units": [
+            100
+        ],
+        "mlp_dropout": 0
+    },
+    "conv1d_params": {
+        "filters": [
+            512,
+            256,
+            128,
+            64
+        ],
+        "kernel_sizes": [
+            1,
+            2,
+            3,
+            4
+        ],
+        "dilation_rates": [
+            1,
+            1,
+            1,
+            1
+        ],
+        "mlp_units": [
+            100
+        ],
+        "mlp_dropout": 0
+    },
+    "lr": 1e-3,
+    "es_patience": 50,
+    "schedular": {
+        "monitor": "loss",
+        "factor": 0.75,
+        "patience": 5,
+        "min_lr": 0,
+        "min_delta": 0,
+        "verbose": 1
+    },
+    "cut": 35
+}

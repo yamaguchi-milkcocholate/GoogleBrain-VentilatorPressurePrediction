@@ -111,9 +111,9 @@ def fetch_data(datadir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
     return train, test, submission
 
 
-def fetch_custom_data(datadir: Path) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def fetch_custom_data(datadir: Path, n_splits: int) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     print("fetching data ...")
-    train = pd.read_csv(datadir / "train_RC_kfold5_seed42.csv", index_col=0)
+    train = pd.read_csv(datadir / f"train_RC_kfold{n_splits}_seed42.csv", index_col=0)
     test = pd.read_csv(datadir / "test.csv")
     test["RC"] = test["R"].astype(str) + "_" + test["C"].astype(str)
     submission = pd.read_csv(datadir / "sample_submission.csv")
@@ -159,17 +159,17 @@ class VentilatorDataset(Dataset):
 class PositionalEncoding(nn.Module):
     """Positional Encoding for Transormer Model"""
 
-    def __init__(self, n_features: int, dropout: Optional[float] = 0.1, max_len=80):
+    def __init__(self, emb_dim: int, dropout: Optional[float] = 0.1, max_len=80):
         super().__init__()
         self.dropout = nn.Dropout(p=dropout)
 
-        pe = torch.zeros(max_len, n_features)
+        pe = torch.zeros(max_len, emb_dim)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
         div_term = torch.exp(
-            torch.arange(0, n_features, 2).float() * (-math.log(10000.0) / n_features)
+            torch.arange(0, emb_dim, 2).float() * (-math.log(10000.0) / emb_dim)
         )
         pe[:, 0::2] = torch.sin(position * div_term)
-        pe[:, 1::2] = torch.cos(position * div_term)[:, : (n_features // 2)]
+        pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0).transpose(0, 1)
         self.register_buffer("pe", pe)
 
@@ -208,8 +208,8 @@ class CustomL1Loss(keras.callbacks.Callback):
         self.best_score = np.inf
 
     def on_epoch_end(self, epoch, logs={}):
-        y_preds = self.model(self.X_valid).numpy().squeeze()
-
+        y_preds = self.model.predict(self.X_valid).squeeze()
+        
         mae = compute_metric(y_trues=self.y_valid, y_preds=y_preds, u_outs=self.u_outs)
         mae = np.mean(mae)
         logs['val_custom_loss'] = mae
@@ -219,3 +219,33 @@ class CustomL1Loss(keras.callbacks.Callback):
         if self.best_score > mae:
             self.best_score = mae
             self.model.save_weights(self.filepath)
+
+
+class TransformerEncoder(keras.layers.Layer):
+    def __init__(self, dim_emb: int, n_heads: int, dim_feedforward: int, dropout: float = 0.):
+        super(TransformerEncoder, self).__init__()
+        # Normalization and Attention
+        self.layer_norm1 = keras.layers.LayerNormalization(epsilon=1e-6)
+        self.multi_head_attention = keras.layers.MultiHeadAttention(
+            key_dim=dim_emb, num_heads=n_heads, dropout=dropout
+        )
+        self.dropout = keras.layers.Dropout(dropout)
+
+        # Feedforward
+        self.layer_norm2 = keras.layers.LayerNormalization(epsilon=1e-6)
+        self.conv1d1 = keras.layers.Conv1D(filters=dim_feedforward, kernel_size=1, activation="relu")
+        self.conv1d2 = keras.layers.Conv1D(filters=dim_emb, kernel_size=1)
+
+    def call(self, input):
+        x = self.layer_norm1(input)
+        x = self.multi_head_attention(x, x)
+        x = self.dropout(x)
+
+        res = x + input
+
+        x = self.layer_norm2(x)
+        x = self.conv1d1(x)
+        x = self.dropout(x)
+        x = self.conv1d2(x)
+
+        return x + res

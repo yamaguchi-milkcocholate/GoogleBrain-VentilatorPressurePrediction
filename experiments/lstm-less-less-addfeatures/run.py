@@ -70,32 +70,32 @@ def _add_features(df_):
         df[f"u_in_diff_f{n_diff}"] = grp_by["u_in"].diff(-n_diff).fillna(0.)
         df[f"u_out_diff_f{n_diff}"] = grp_by["u_out"].diff(-n_diff).fillna(0.)
 
-    # window
-    cols_list = (
-        ["u_in"] + [f"u_in_lag_b{n_lag}" for n_lag in range(1, 6)],  # back
-        list(reversed([f"u_in_lag_f{n_lag}" for n_lag in range(1, 6)]))
-        + ["u_in"],  # front
-        list(reversed([f"u_in_lag_f{n_lag}" for n_lag in range(1, 3)]))
-        + ["u_in"]
-        + [f"u_in_lag_b{n_lag}" for n_lag in range(1, 6)],  # center
-    )
-    for cols, prefix in zip(cols_list, ("b", "f", "c")):
-        for lam in ["mean", "max", "min", "std"]:
-            df[f"u_in_{prefix}window_{lam}"] = getattr(np, lam)(df[cols].values, axis=1)
+    # # window
+    # cols_list = (
+    #     ["u_in"] + [f"u_in_lag_b{n_lag}" for n_lag in range(1, 6)],  # back
+    #     list(reversed([f"u_in_lag_f{n_lag}" for n_lag in range(1, 6)]))
+    #     + ["u_in"],  # front
+    #     list(reversed([f"u_in_lag_f{n_lag}" for n_lag in range(1, 3)]))
+    #     + ["u_in"]
+    #     + [f"u_in_lag_b{n_lag}" for n_lag in range(1, 6)],  # center
+    # )
+    # for cols, prefix in zip(cols_list, ("b", "f", "c")):
+    #     for lam in ["mean", "max", "min", "std"]:
+    #         df[f"u_in_{prefix}window_{lam}"] = getattr(np, lam)(df[cols].values, axis=1)
 
-    weights1 = np.array([(2 / (len(cols_list[0]) + 1)) ** (i + 1) for i in range(len(cols_list[0]))])
-    weights1 /= np.sum(weights1)
-    weights2 = np.array([(2 / (len(cols_list[-1]) + 1)) ** (i + 1) for i in range(len(cols_list[-1]))])
-    weights2 /= np.sum(weights2)
-    for cols, weights, prefix in zip(cols_list, (weights1, weights1, weights2), ("b", "f", "c")):
-        df[f"u_in_{prefix}window_ewm"] = np.dot(df[cols].values, weights)
+    # weights1 = np.array([(2 / (len(cols_list[0]) + 1)) ** (i + 1) for i in range(len(cols_list[0]))])
+    # weights1 /= np.sum(weights1)
+    # weights2 = np.array([(2 / (len(cols_list[-1]) + 1)) ** (i + 1) for i in range(len(cols_list[-1]))])
+    # weights2 /= np.sum(weights2)
+    # for cols, weights, prefix in zip(cols_list, (weights1, weights1, weights2), ("b", "f", "c")):
+    #     df[f"u_in_{prefix}window_ewm"] = np.dot(df[cols].values, weights)
 
-    # window x u_in
-    for prefix in ("b", "f", "c"):
-        for lam in ["mean", "max", "min"]:
-            df[f"u_in_{prefix}window_{lam}_diff"] = (
-                df["u_in"] - df[f"u_in_{prefix}window_{lam}"]
-            )
+    # # window x u_in
+    # for prefix in ("b", "f", "c"):
+    #     for lam in ["mean", "max", "min"]:
+    #         df[f"u_in_{prefix}window_{lam}_diff"] = (
+    #             df["u_in"] - df[f"u_in_{prefix}window_{lam}"]
+    #         )
 
     df["u_in_diff_sign"] = np.sign(df["u_in_diff_b1"])
 
@@ -120,31 +120,31 @@ def calc_stats(df_):
     df = pd.DataFrame(
         {"breath_id": first_df["breath_id"].values, "RC": first_df["RC"].values, "R": first_df["R"], "C": first_df["C"]}
     )
-    df["area_insp_last"] = last_df["area_insp"].values
-    df["total_time"] = last_df["time_step"].values
+    # df["area_insp_last"] = last_df["area_insp"].values
+    # df["total_time"] = last_df["time_step"].values
 
-    grp_by = df_.groupby("breath_id")
-    for lam in ["max", "mean", "std"]:
-        df[f"u_in_{lam}"] = df["breath_id"].map(
-            getattr(grp_by["u_in"], lam)().to_dict()
-        )
+    # grp_by = df_.groupby("breath_id")
+    # for lam in ["max", "mean", "std"]:
+    #     df[f"u_in_{lam}"] = df["breath_id"].map(
+    #         getattr(grp_by["u_in"], lam)().to_dict()
+    #     )
 
-    for lam in ["max", "mean"]:
-        df[f"area_{lam}"] = df["breath_id"].map(
-            getattr(grp_by["area"], lam)().to_dict()
-        )
-        df[f"area_insp_{lam}"] = df["breath_id"].map(
-            getattr(grp_by["area_insp"], lam)().to_dict()
-        )
+    # for lam in ["max", "mean"]:
+    #     df[f"area_{lam}"] = df["breath_id"].map(
+    #         getattr(grp_by["area"], lam)().to_dict()
+    #     )
+    #     df[f"area_insp_{lam}"] = df["breath_id"].map(
+    #         getattr(grp_by["area_insp"], lam)().to_dict()
+    #     )
 
-    df["vibs"] = df["breath_id"].map(grp_by["u_in_diff_change"].sum().to_dict())
+    # df["vibs"] = df["breath_id"].map(grp_by["u_in_diff_change"].sum().to_dict())
     df = pd.get_dummies(df)
 
     return df
 
 
-def add_features(df_, is_debug, cachedir, prefix):
-    filepath = cachedir / f"{prefix}_lstm-less-addfeatures_debug{is_debug}.csv"
+def add_features(df_):
+    filepath = cachedir / f"{prefix}_lstm-less-less-addfeatures_debug{is_debug}.csv"
 
     if os.path.exists(filepath):
         df = pd.read_csv(filepath)
@@ -158,13 +158,13 @@ def add_features(df_, is_debug, cachedir, prefix):
     for c in cols:
         df[c] = df.breath_id.map(df_stats[c].to_dict())
 
-    df["norm_time_step"] = df["time_step"] / df["total_time"]
-    df.drop(["total_time"], axis=1, inplace=True)
+    # df["norm_time_step"] = df["time_step"] / df["total_time"]
+    # df.drop(["total_time"], axis=1, inplace=True)
 
-    for lam in ["max", "mean"]:
-        df[f"u_in_{lam}_diff"] = df["u_in"] - df[f"u_in_{lam}"]
-        df[f"area_{lam}_diff"] = df["area"] - df[f"area_{lam}"]
-        df[f"area_insp_{lam}_diff"] = df["area_insp"] - df[f"area_insp_{lam}"]
+    # for lam in ["max", "mean"]:
+    #     df[f"u_in_{lam}_diff"] = df["u_in"] - df[f"u_in_{lam}"]
+    #     df[f"area_{lam}_diff"] = df["area"] - df[f"area_{lam}"]
+    #     df[f"area_insp_{lam}_diff"] = df["area_insp"] - df[f"area_insp_{lam}"]
 
     df.drop(
         ["id", "RC", "R", "C", "breath_id", "u_in_diff_sign", "u_in_diff_change"],
@@ -204,20 +204,18 @@ def main(config: Dict[str, Any]):
     basedir = Path(__file__).resolve().parent
     datadir = basedir / ".." / ".." / "data"
     logdir = basedir / ".." / ".." / "logs" / config.dirname
-    cachedir = basedir / ".." / ".." / "cache"
     os.makedirs(logdir, exist_ok=True)
 
     config.to_json(logdir / "config.json")
-    train_df, test_df, submission_df = fetch_custom_data(datadir=datadir, n_splits=config.n_splits)
+    train_df, test_df, submission_df = fetch_custom_data(datadir=datadir)
     test_df["pressure"] = 0
 
     if config.debug:
-        train_df = train_df[: 80 * 1000]
-        test_df = test_df[: 80 * 1000]
+        train_df = train_df[: 80 * 100]
+        test_df = test_df[: 80 * 100]
 
     train_df = add_features(train_df, config.debug, cachedir, "train")
     test_df = add_features(test_df, config.debug, cachedir, "test")
-
 
     kfolds = train_df.iloc[0::80]['kfold'].values
 
@@ -305,8 +303,7 @@ def main(config: Dict[str, Any]):
     pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv")
 
     if not config.debug:
-
-        submission_df["pressure"] = np.median(test_preds, axis=0)
+        submission_df["pressure"] = sum(test_preds) / 5
         submission_df.to_csv(logdir / "submission.csv", index=False)
 
     shutil.copyfile(Path(__file__), logdir / "script.py")

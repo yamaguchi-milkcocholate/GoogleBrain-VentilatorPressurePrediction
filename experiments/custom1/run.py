@@ -31,7 +31,8 @@ from src.utils import (
     reduce_tf_gpu_memory,
     reduce_mem_usage,
     fetch_custom_data,
-    CustomL1Loss
+    CustomL1Loss,
+    TransformerEncoder
 )
 
 
@@ -113,9 +114,9 @@ def _add_features(df_):
     return df
 
 
-def calc_stats(df_):
-    first_df = df_.loc[0::80]
-    last_df = df_.loc[79::80]
+def calc_stats(df_, n_timesteps):
+    first_df = df_.loc[0::n_timesteps]
+    last_df = df_.loc[n_timesteps - 1::n_timesteps]
 
     df = pd.DataFrame(
         {"breath_id": first_df["breath_id"].values, "RC": first_df["RC"].values, "R": first_df["R"], "C": first_df["C"]}
@@ -143,8 +144,8 @@ def calc_stats(df_):
     return df
 
 
-def add_features(df_, is_debug, cachedir, prefix):
-    filepath = cachedir / f"{prefix}_lstm-less-addfeatures_debug{is_debug}.csv"
+def add_features(df_, is_debug, cachedir, prefix, n_timesteps):
+    filepath = cachedir / f"{prefix}_lstm-less-cut-addfeatures_debug{is_debug}.csv"
 
     if os.path.exists(filepath):
         df = pd.read_csv(filepath)
@@ -152,7 +153,7 @@ def add_features(df_, is_debug, cachedir, prefix):
 
     df = df_.copy()
     df = _add_features(df)
-    df_stats = calc_stats(df)
+    df_stats = calc_stats(df, n_timesteps=n_timesteps)
     df_stats = df_stats.set_index("breath_id")
     cols = df_stats.columns
     for c in cols:
@@ -177,22 +178,64 @@ def add_features(df_, is_debug, cachedir, prefix):
     return df
 
 
-def build_model(config: Config, n_features) -> keras.models.Sequential:
-    model = keras.models.Sequential([keras.layers.Input(shape=(80, n_features))])
-    for n_unit in config.n_units:
-        model.add(
-            keras.layers.Bidirectional(
-                keras.layers.LSTM(
-                    n_unit,
-                    return_sequences=True,
-                )
-            )
-        )
-    for n_unit in config.n_dense_units:
-        model.add(keras.layers.Dense(n_unit, activation="selu"))
-    model.add(keras.layers.Dense(1))
+def build_model(config: Config, n_features: int) -> keras.models.Sequential:
+    n_inputs = config.cut
+    transformer_params = config.transformer_params
+    bilstm_params = config.bilstm_params
+    conv1d_params = config.conv1d_params
 
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss="mae")
+    inputs = keras.Input(shape=(n_inputs, n_features))
+
+    # Transformer Part
+    # x_trans = inputs
+    # x_trans = keras.layers.Dense(transformer_params["encoder_params"]["dim_emb"], activation="relu")(x_trans)
+    # for _ in range(transformer_params["num_transformer_blocks"]):
+    #     x_trans = TransformerEncoder(**transformer_params["encoder_params"])(x_trans)
+
+    # for dim in transformer_params["mlp_units"]:
+    #     x_trans = keras.layers.Dense(dim, activation="relu")(x_trans)
+    #     x_trans = keras.layers.Dropout(transformer_params["mlp_dropout"])(x_trans)
+
+    # Bi-LSTM Part
+    x_bilstm = inputs
+    for n_unit in bilstm_params["units"]:
+        x_bilstm = keras.layers.Bidirectional(
+            keras.layers.LSTM(
+                n_unit,
+                return_sequences=True,
+            )
+        )(x_bilstm)
+
+    for n_unit in bilstm_params["mlp_units"]:
+        x_bilstm = keras.layers.Dense(n_unit, activation="selu")(x_bilstm)
+        x_bilstm = keras.layers.Dropout(bilstm_params["mlp_dropout"])(x_bilstm)
+
+    # Conv1D Part
+    x_conv = inputs
+    for (n_filter, k_size, dilation_rate) in zip(conv1d_params["filters"], conv1d_params["kernel_sizes"], conv1d_params["dilation_rates"]):
+        x_conv = keras.layers.Conv1D(
+            filters=n_filter,
+            kernel_size=k_size,
+            dilation_rate=dilation_rate,
+            strides=1,
+            activation="relu",
+            padding="valid"
+        )(x_conv)
+    for n_unit in conv1d_params["mlp_units"]:
+        x_conv = keras.layers.Dense(n_unit)(x_conv)
+        x_conv = keras.layers.Dropout(conv1d_params["mlp_dropout"])(x_conv)
+    x_conv = keras.layers.GlobalMaxPooling1D()(x_conv)
+    x_conv = tf.transpose(x_conv[tf.newaxis], perm=[1, 0, 2])
+    x_conv = tf.tile(x_conv, tf.constant([1, n_inputs, 1], tf.int32))
+
+    # x_concat = keras.layers.Concatenate(axis=2)([x_trans, x_bilstm, x_conv])
+    x_concat = keras.layers.Concatenate(axis=2)([x_bilstm, x_conv])
+    outputs = keras.layers.Dense(1)(x_concat)
+
+    model = keras.Model(inputs, outputs)
+    model.compile(
+        optimizer=keras.optimizers.Adam(learning_rate=config.lr),
+        loss='mae')
     return model
 
 
@@ -209,17 +252,20 @@ def main(config: Dict[str, Any]):
 
     config.to_json(logdir / "config.json")
     train_df, test_df, submission_df = fetch_custom_data(datadir=datadir, n_splits=config.n_splits)
+    train_df["count"], test_df["count"] = (np.arange(train_df.shape[0]) % 80).astype(int), (np.arange(test_df.shape[0]) % 80).astype(int)
+    train_df = train_df[train_df["count"] < config.cut].reset_index(drop=True)
+    test_preds_idx = test_df["count"] < config.cut
+    test_df = test_df[test_preds_idx].reset_index(drop=True)
     test_df["pressure"] = 0
 
     if config.debug:
-        train_df = train_df[: 80 * 1000]
-        test_df = test_df[: 80 * 1000]
+        train_df = train_df[: config.cut * 1000]
+        test_df = test_df[: config.cut * 1000]
 
-    train_df = add_features(train_df, config.debug, cachedir, "train")
-    test_df = add_features(test_df, config.debug, cachedir, "test")
+    train_df = add_features(train_df, config.debug, cachedir, "train", n_timesteps=config.cut)
+    test_df = add_features(test_df, config.debug, cachedir, "test", n_timesteps=config.cut)
 
-
-    kfolds = train_df.iloc[0::80]['kfold'].values
+    kfolds = train_df.iloc[0::config.cut]['kfold'].values
 
     features = list(train_df.drop(["kfold", "pressure"], axis=1).columns)
     pprint(features)
@@ -233,9 +279,9 @@ def main(config: Dict[str, Any]):
     test_df[cont_features] = RS.transform(test_df[cont_features])
     train_data, test_data = train_df[features].values, test_df[features].values
 
-    train_data = train_data.reshape(-1, 80, train_data.shape[-1])
-    targets = train_df[["pressure"]].to_numpy().reshape(-1, 80)
-    test_data = test_data.reshape(-1, 80, test_data.shape[-1])
+    train_data = train_data.reshape(-1, config.cut, train_data.shape[-1])
+    targets = train_df[["pressure"]].to_numpy().reshape(-1, config.cut)
+    test_data = test_data.reshape(-1, config.cut, test_data.shape[-1])
 
     with tf.device(f"/GPU:{config.gpu_id}"):
         valid_preds = np.empty_like(targets)
@@ -305,8 +351,7 @@ def main(config: Dict[str, Any]):
     pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv")
 
     if not config.debug:
-
-        submission_df["pressure"] = np.median(test_preds, axis=0)
+        submission_df.loc[test_preds_idx, "pressure"] = np.median(test_preds, axis=0)
         submission_df.to_csv(logdir / "submission.csv", index=False)
 
     shutil.copyfile(Path(__file__), logdir / "script.py")

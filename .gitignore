@@ -1,5 +1,8 @@
+custom_submission.csv
+median_submission.csv
 data/*
 logs/*
+cache/*
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

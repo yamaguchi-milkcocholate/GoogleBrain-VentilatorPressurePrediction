@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import *
 
 import tensorflow as tf
+import tensorflow_addons as tfa
 from tensorflow import keras
 from tensorflow.keras.callbacks import EarlyStopping, ReduceLROnPlateau, ModelCheckpoint
 
@@ -31,7 +32,7 @@ from src.utils import (
     reduce_tf_gpu_memory,
     reduce_mem_usage,
     fetch_custom_data,
-    CustomL1Loss
+    CustomL1Loss,
 )
 
 
@@ -47,7 +48,7 @@ def _add_features(df_):
     df["cross3"] = df["time_step"] * df["u_out"]
 
     grp_by = df.groupby("breath_id")
-    df["time_delta"] = grp_by["time_step"].diff(1).fillna(0.)
+    df["time_delta"] = grp_by["time_step"].diff(1).fillna(0.0)
     df["time_step_cumsum"] = grp_by["time_step"].cumsum()
     df["u_in_cumsum"] = grp_by["u_in"].cumsum()
     df["count"] = grp_by["tmp0"].cumsum()
@@ -56,25 +57,24 @@ def _add_features(df_):
 
     # lag
     for n_lag in range(1, 6):
-        df[f"u_in_lag_b{n_lag}"] = grp_by["u_in"].shift(n_lag).fillna(0.)
-        df[f"u_out_lag_b{n_lag}"] = grp_by["u_out"].shift(n_lag).fillna(0.)
+        df[f"u_in_lag_b{n_lag}"] = grp_by["u_in"].shift(n_lag).fillna(0.0)
+        df[f"u_out_lag_b{n_lag}"] = grp_by["u_out"].shift(n_lag).fillna(0.0)
     for n_lag in range(1, 6):
-        df[f"u_in_lag_f{n_lag}"] = grp_by["u_in"].shift(-n_lag).fillna(0.)
-        df[f"u_out_lag_f{n_lag}"] = grp_by["u_out"].shift(-n_lag).fillna(0.)
+        df[f"u_in_lag_f{n_lag}"] = grp_by["u_in"].shift(-n_lag).fillna(0.0)
+        df[f"u_out_lag_f{n_lag}"] = grp_by["u_out"].shift(-n_lag).fillna(0.0)
 
     # diff
     for n_diff in range(1, 6):
-        df[f"u_in_diff_b{n_diff}"] = grp_by["u_in"].diff(n_diff).fillna(0.)
-        df[f"u_out_diff_b{n_diff}"] = grp_by["u_out"].diff(n_diff).fillna(0.)
+        df[f"u_in_diff_b{n_diff}"] = grp_by["u_in"].diff(n_diff).fillna(0.0)
+        df[f"u_out_diff_b{n_diff}"] = grp_by["u_out"].diff(n_diff).fillna(0.0)
     for n_diff in range(1, 6):
-        df[f"u_in_diff_f{n_diff}"] = grp_by["u_in"].diff(-n_diff).fillna(0.)
-        df[f"u_out_diff_f{n_diff}"] = grp_by["u_out"].diff(-n_diff).fillna(0.)
+        df[f"u_in_diff_f{n_diff}"] = grp_by["u_in"].diff(-n_diff).fillna(0.0)
+        df[f"u_out_diff_f{n_diff}"] = grp_by["u_out"].diff(-n_diff).fillna(0.0)
 
     # window
     cols_list = (
         ["u_in"] + [f"u_in_lag_b{n_lag}" for n_lag in range(1, 6)],  # back
-        list(reversed([f"u_in_lag_f{n_lag}" for n_lag in range(1, 6)]))
-        + ["u_in"],  # front
+        list(reversed([f"u_in_lag_f{n_lag}" for n_lag in range(1, 6)])) + ["u_in"],  # front
         list(reversed([f"u_in_lag_f{n_lag}" for n_lag in range(1, 3)]))
         + ["u_in"]
         + [f"u_in_lag_b{n_lag}" for n_lag in range(1, 6)],  # center
@@ -93,9 +93,7 @@ def _add_features(df_):
     # window x u_in
     for prefix in ("b", "f", "c"):
         for lam in ["mean", "max", "min"]:
-            df[f"u_in_{prefix}window_{lam}_diff"] = (
-                df["u_in"] - df[f"u_in_{prefix}window_{lam}"]
-            )
+            df[f"u_in_{prefix}window_{lam}_diff"] = df["u_in"] - df[f"u_in_{prefix}window_{lam}"]
 
     df["u_in_diff_sign"] = np.sign(df["u_in_diff_b1"])
 
@@ -103,9 +101,7 @@ def _add_features(df_):
     df["tmp2"] = df["time_delta"] * ((1 - df["u_out"]) * df["u_in"])
 
     grp_by = df.groupby("breath_id")
-    df["u_in_diff_change"] = (
-        np.sign(grp_by["u_in_diff_sign"].diff(1).fillna(0)) != 0
-    ).astype(int)
+    df["u_in_diff_change"] = (np.sign(grp_by["u_in_diff_sign"].diff(1).fillna(0)) != 0).astype(int)
     df["area"] = grp_by["tmp1"].cumsum()
     df["area_insp"] = grp_by["tmp2"].cumsum()
 
@@ -113,9 +109,9 @@ def _add_features(df_):
     return df
 
 
-def calc_stats(df_):
-    first_df = df_.loc[0::80]
-    last_df = df_.loc[79::80]
+def calc_stats(df_, n_timesteps):
+    first_df = df_.loc[0::n_timesteps]
+    last_df = df_.loc[n_timesteps - 1 :: n_timesteps]
 
     df = pd.DataFrame(
         {"breath_id": first_df["breath_id"].values, "RC": first_df["RC"].values, "R": first_df["R"], "C": first_df["C"]}
@@ -125,17 +121,11 @@ def calc_stats(df_):
 
     grp_by = df_.groupby("breath_id")
     for lam in ["max", "mean", "std"]:
-        df[f"u_in_{lam}"] = df["breath_id"].map(
-            getattr(grp_by["u_in"], lam)().to_dict()
-        )
+        df[f"u_in_{lam}"] = df["breath_id"].map(getattr(grp_by["u_in"], lam)().to_dict())
 
     for lam in ["max", "mean"]:
-        df[f"area_{lam}"] = df["breath_id"].map(
-            getattr(grp_by["area"], lam)().to_dict()
-        )
-        df[f"area_insp_{lam}"] = df["breath_id"].map(
-            getattr(grp_by["area_insp"], lam)().to_dict()
-        )
+        df[f"area_{lam}"] = df["breath_id"].map(getattr(grp_by["area"], lam)().to_dict())
+        df[f"area_insp_{lam}"] = df["breath_id"].map(getattr(grp_by["area_insp"], lam)().to_dict())
 
     df["vibs"] = df["breath_id"].map(grp_by["u_in_diff_change"].sum().to_dict())
     df = pd.get_dummies(df)
@@ -143,8 +133,8 @@ def calc_stats(df_):
     return df
 
 
-def add_features(df_, is_debug, cachedir, prefix):
-    filepath = cachedir / f"{prefix}_lstm-less-addfeatures_debug{is_debug}.csv"
+def add_features(df_, is_debug, cachedir, prefix, n_timesteps):
+    filepath = cachedir / f"{prefix}_lstm-less-cut-addfeatures_debug{is_debug}.csv"
 
     if os.path.exists(filepath):
         df = pd.read_csv(filepath)
@@ -152,7 +142,7 @@ def add_features(df_, is_debug, cachedir, prefix):
 
     df = df_.copy()
     df = _add_features(df)
-    df_stats = calc_stats(df)
+    df_stats = calc_stats(df, n_timesteps=n_timesteps)
     df_stats = df_stats.set_index("breath_id")
     cols = df_stats.columns
     for c in cols:
@@ -178,7 +168,7 @@ def add_features(df_, is_debug, cachedir, prefix):
 
 
 def build_model(config: Config, n_features) -> keras.models.Sequential:
-    model = keras.models.Sequential([keras.layers.Input(shape=(80, n_features))])
+    model = keras.models.Sequential([keras.layers.Input(shape=(config.cut, n_features))])
     for n_unit in config.n_units:
         model.add(
             keras.layers.Bidirectional(
@@ -192,7 +182,9 @@ def build_model(config: Config, n_features) -> keras.models.Sequential:
         model.add(keras.layers.Dense(n_unit, activation="selu"))
     model.add(keras.layers.Dense(1))
 
-    model.compile(optimizer=keras.optimizers.Adam(learning_rate=config.lr), loss="mae")
+    optimizer = keras.optimizers.Adam(learning_rate=config.lr)
+    optimizer = tfa.optimizers.MovingAverage(optimizer)
+    model.compile(optimizer=optimizer, loss="mae")
     return model
 
 
@@ -209,23 +201,30 @@ def main(config: Dict[str, Any]):
 
     config.to_json(logdir / "config.json")
     train_df, test_df, submission_df = fetch_custom_data(datadir=datadir, n_splits=config.n_splits)
+    train_df["count"], test_df["count"] = (np.arange(train_df.shape[0]) % 80).astype(int), (
+        np.arange(test_df.shape[0]) % 80
+    ).astype(int)
+    train_df = train_df[train_df["count"] < config.cut].reset_index(drop=True)
+    test_preds_idx = test_df["count"] < config.cut
+    test_df = test_df[test_preds_idx].reset_index(drop=True)
     test_df["pressure"] = 0
 
     if config.debug:
-        train_df = train_df[: 80 * 1000]
-        test_df = test_df[: 80 * 1000]
+        train_df = train_df[: config.cut * 1000]
+        test_df = test_df[: config.cut * 1000]
 
-    train_df = add_features(train_df, config.debug, cachedir, "train")
-    test_df = add_features(test_df, config.debug, cachedir, "test")
+    train_df = add_features(train_df, config.debug, cachedir, "train", n_timesteps=config.cut)
+    test_df = add_features(test_df, config.debug, cachedir, "test", n_timesteps=config.cut)
 
-
-    kfolds = train_df.iloc[0::80]['kfold'].values
+    kfolds = train_df.iloc[0 :: config.cut]["kfold"].values
 
     features = list(train_df.drop(["kfold", "pressure"], axis=1).columns)
     pprint(features)
     print(len(features))
 
-    cont_features = [f for f in features if ("RC_" not in f) and ("R_" not in f) and ("C_" not in f) and ("u_out" not in f)]
+    cont_features = [
+        f for f in features if ("RC_" not in f) and ("R_" not in f) and ("C_" not in f) and ("u_out" not in f)
+    ]
     pprint(cont_features)
 
     RS = RobustScaler()
@@ -233,9 +232,9 @@ def main(config: Dict[str, Any]):
     test_df[cont_features] = RS.transform(test_df[cont_features])
     train_data, test_data = train_df[features].values, test_df[features].values
 
-    train_data = train_data.reshape(-1, 80, train_data.shape[-1])
-    targets = train_df[["pressure"]].to_numpy().reshape(-1, 80)
-    test_data = test_data.reshape(-1, 80, test_data.shape[-1])
+    train_data = train_data.reshape(-1, config.cut, train_data.shape[-1])
+    targets = train_df[["pressure"]].to_numpy().reshape(-1, config.cut)
+    test_data = test_data.reshape(-1, config.cut, test_data.shape[-1])
 
     with tf.device(f"/GPU:{config.gpu_id}"):
         valid_preds = np.empty_like(targets)
@@ -264,21 +263,29 @@ def main(config: Dict[str, Any]):
                 X_valid=X_valid,
                 y_valid=y_valid,
                 u_outs=X_valid[:, :, features.index("u_out")],
-                filepath=savedir / "weights_custom_best.h5"
+                filepath=savedir / "weights_custom_best.h5",
             )
 
-            check_point = ModelCheckpoint(
-                filepath=savedir / "weights_best.h5",
-                monitor="val_loss",
+            # check_point = ModelCheckpoint(
+            #     filepath=savedir / "weights_best.h5",
+            #     monitor="val_loss",
+            #     verbose=1,
+            #     save_best_only=True,
+            #     mode="min",
+            #     save_weights_only=True,
+            # )
+
+            avg_callback = tfa.callbacks.AverageModelCheckpoint(
+                filepath=str(savedir / "wegihts_mae_best.h5"),
+                update_weights=True,
                 verbose=1,
                 save_best_only=True,
                 mode="min",
                 save_weights_only=True,
+                monitor="val_loss",
             )
 
-            schedular = ReduceLROnPlateau(
-                monitor="val_loss", mode="min", **config.schedular
-            )
+            schedular = ReduceLROnPlateau(monitor="val_loss", mode="min", **config.schedular)
 
             history = model.fit(
                 X_train,
@@ -286,7 +293,7 @@ def main(config: Dict[str, Any]):
                 validation_data=(X_valid, y_valid),
                 epochs=config.epochs,
                 batch_size=config.batch_size,
-                callbacks=[check_point, schedular, customL1]
+                callbacks=[avg_callback, schedular, customL1],
             )
             model.save_weights(savedir / "weights_final.h5")
 
@@ -305,8 +312,7 @@ def main(config: Dict[str, Any]):
     pd.DataFrame(valid_preds).to_csv(logdir / "valid_preds.csv")
 
     if not config.debug:
-
-        submission_df["pressure"] = np.median(test_preds, axis=0)
+        submission_df.loc[test_preds_idx, "pressure"] = np.median(test_preds, axis=0)
         submission_df.to_csv(logdir / "submission.csv", index=False)
 
     shutil.copyfile(Path(__file__), logdir / "script.py")
